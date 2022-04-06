@@ -10,7 +10,7 @@ from bsd_dataset.common.dataloaders import get_train_loader, get_eval_loader
 
 # Load the full dataset, and download it if necessary
 dataset = get_dataset(
-    input_datasets=['ccsm4', 'cgcm3', 'cm5a'],
+    input_datasets=['cm3', 'cgcm3', 'cm5a'],
     target_dataset='chirps25',
     region=regions.NorthAmerica,
     download=True)
