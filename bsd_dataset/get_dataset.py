@@ -1,14 +1,28 @@
+from __future__ import annotations
+from typing import Any, Dict, List, TYPE_CHECKING
+
 import bsd_dataset
-from bsd_dataset.datasets import BSDDataset
 
+if TYPE_CHECKING:
+    from bsd_dataset.regions import RegionCoordinates
 
-def get_dataset(input_datasets: List[str], target_dataset: str, auxiliary_datasets: List[str] = [], **dataset_kwargs) -> None:
+def get_dataset(
+    input_datasets: List[str], 
+    target_dataset: str,
+    region: RegionCoordinates,
+    auxiliary_datasets: List[str] = [],
+    variable_dictionary: Dict[str, Any] = {},
+    download: bool = True) -> None:
     """
     Parameters:
         input_datasets: Names of the input datasets.
         target_dataset: Name of the target dataset.
-        auxiliary_dataset: Names of the auxiliary datasets.
-        dataset_kwargs: Keyword arguments to pass to the dataset constructor.
+        region: Coordinates that define the region of interest.
+        auxiliary_datasets: Names of the auxiliary datasets.
+        variable_dictionary: A dictionary of variables to include besides
+            precipitation.
+        download: If true and the requested datasets are not stored locally,
+            download them.
     """
     for dataset in input_datasets:
         if dataset not in bsd_dataset.input_datasets:
@@ -19,4 +33,11 @@ def get_dataset(input_datasets: List[str], target_dataset: str, auxiliary_datase
         if dataset not in bsd_dataset.auxiliary_datasets:
             raise ValueError(f'The auxiliary dataset {dataset} is not recognized. Must be one of {bsd_dataset.auxiliary_dataset}.')
 
-    return BSDDataset(input_datasets, target_dataset, auxiliary_datasets, **dataset_kwargs)
+    from bsd_dataset.datasets.dataset import BSDDataset
+    return BSDDataset(
+        input_datasets,
+        target_dataset,
+        region,
+        auxiliary_datasets,
+        variable_dictionary,
+        download)

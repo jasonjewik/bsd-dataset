@@ -46,7 +46,7 @@ def download_urls(urls: List[str], root: str, filenames: Optional[List[str]] = N
         raise ValueError('the number of URLs and file names must be the same')
     
     if n_workers == 1:
-        for url, fname for zip(urls, filenames):
+        for url, fname in zip(urls, filenames):
             download_url(url, root, fname)
     else:
         q = queue.Queue()
