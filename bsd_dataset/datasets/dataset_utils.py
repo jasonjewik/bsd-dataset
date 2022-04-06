@@ -66,7 +66,7 @@ def extract_cmip5_data(src: List[str], dst: str, lons: np.array, lats: np.array,
             time=slice(*dates),
             lat=slice(*lats),
             lon=slice(*lons%360))  # convert 360deg to 180deg system
-        if direc == 'CGCM3':
+        if 'CGCM3' in direc:
             xdata = fix_dates(xdata)
             mask = ~xdata['time'].isin(LEAP_YEAR_DATES)
         else:

@@ -52,10 +52,11 @@ def download_urls(urls: List[str], root: str, filenames: Optional[List[str]] = N
         q = queue.Queue()
         def worker():
             while True:
-                download_url(*q.get())
+                url, fname = q.get()
+                download_url(url, root, fname)
                 q.task_done()
         for _ in range(n_workers):
             threading.Thread(target=worker, daemon=True).start()
-        for url in urls:
-            q.put(url)
+        for url, fname in zip(urls, filenames):
+            q.put((url, fname))
         q.join()

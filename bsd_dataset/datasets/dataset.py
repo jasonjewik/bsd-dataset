@@ -31,23 +31,23 @@ class BSDDataset(torch.utils.data.Dataset):
                     download_urls(urls, './data/CHIRPS25', n_workers=5)
                 if ds == 'cgcm3':
                     urls = [
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/pr/pr_day_MRI-CGCM3_historical_r1i1p1_19800101-19891231.nc',
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/pr/pr_day_MRI-CGCM3_historical_r1i1p1_19900101-19991231.nc',
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/pr/pr_day_MRI-CGCM3_historical_r1i1p1_20000101-20051231.nc'
+                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_19800101-19891231.nc',
+                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_19900101-19991231.nc',
+                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_20000101-20051231.nc'
                     ]
                     download_urls(urls, './data/CGCM3', n_workers=5)
                 if ds == 'cm3':
-                    urls += [
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_19800101-19841231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_19850101-19891231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_19900101-19941231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_19950101-19991231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_20000101-20041231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/pr/pr_day_GFDL-CM3_historical_r1i1p1_20050101-20051231.nc'
+                    urls = [
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19800101-19841231.nc',
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19850101-19891231.nc',
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19900101-19941231.nc',
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19950101-19991231.nc',
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_20000101-20041231.nc',
+                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_20050101-20051231.nc'
                     ]
                     download_urls(urls, './data/CM3', n_workers=5)
                 if ds == 'cm5a':
-                    urls.append('http://aims3.llnl.gov/thredds/fileServer/cmip5_css01_data/cmip5/output1/IPSL/IPSL-CM5A-LR/historical/day/atmos/day/r1i1p1/v20110909/pr/pr_day_IPSL-CM5A-LR_historical_r1i1p1_19500101-20051231.nc')
+                    urls = ['http://aims3.llnl.gov/thredds/fileServer/cmip5_css01_data/cmip5/output1/IPSL/IPSL-CM5A-LR/historical/day/atmos/day/r1i1p1/v20110909/prc/prc_day_IPSL-CM5A-LR_historical_r1i1p1_19500101-20051231.nc']
                     download_urls(urls, './data/CM5A', n_workers=5)
 
         # Define temporal coverage
@@ -56,7 +56,7 @@ class BSDDataset(torch.utils.data.Dataset):
         test_dates = ('2005-01-01', '2005-12-31')
 
         # Define spatial coverage
-        lons, lats = [], []
+        lons, lats = [0, 0], [0, 0]
         lons[0], lats[0] = region.top_left_corner
         lons[1], lats[1] = region.bottom_right_corner
         lons = np.array(lons)
@@ -101,6 +101,7 @@ class BSDDataset(torch.utils.data.Dataset):
             load_XY('./data/test_x.npy', './data/test_y.npy')
         else:
             print(f'Split {split} not recognized')
+        return self
             
     def eval(self, y_pred, y_true):
         """
