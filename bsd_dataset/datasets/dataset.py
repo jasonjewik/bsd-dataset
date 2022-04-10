@@ -1,7 +1,9 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
+import os
 import torch
+import torchvision.transforms
 
 from bsd_dataset.regions import RegionCoordinates
 from bsd_dataset.datasets.download_utils import download_urls
@@ -9,78 +11,168 @@ from bsd_dataset.datasets.dataset_utils import extract_chirps25_data, extract_cm
 
 
 class BSDDataset(torch.utils.data.Dataset):
+
     def __init__(
         self, 
         input_datasets: List[str],
         target_dataset: str,
-        region: RegionCoordinates,
+        train_region: RegionCoordinates,
+        val_region: RegionCoordinates,
+        test_region: RegionCoordinates,
+        train_dates: Tuple[str, str],
+        val_dates: Tuple[str, str],
+        test_dates: Tuple[str, str],
         auxiliary_datasets: List[str] = [],
         variable_dictionary: Dict[str, Any] = {},
-        download: bool = False):
+        transform: torchvision.transforms = None,
+        target_transform: torchvision.transforms = None,
+        download: bool = False,
+        extract: bool = False,
+        root: str = './data'):
         """
         Parameters:
             See get_dataset.py.
         """
+        # Save parameters
+        self.transform = transform
+        self.target_transform = target_transform
+
+        # Define spatial coverage
+        def get_lons_lats(region: RegionCoordinates) -> Tuple[np.array, np.array]:
+            lons, lats = [0, 0], [0, 0]
+            lons[0], lats[0] = region.top_left_corner
+            lons[1], lats[1] = region.bottom_right_corner
+            lons = np.array(lons)
+            lats = np.array(lats)
+            return lons, lats
+        train_lons, train_lats = get_lons_lats(train_region)
+        val_lons, val_lats = get_lons_lats(val_region)
+        test_lons, test_lats = get_lons_lats(test_region)
+
         # Download datasets
+        self.root = root
+        self.target_direcs = []
+        n_workers = 5
+
         if download:
             datasets = input_datasets + [target_dataset] + auxiliary_datasets
             for ds in datasets:
+                dst_direc = os.path.join(root, ds.upper())
                 if ds == 'chirps25':
-                    years = range(1981, 2006)
-                    urls = [f'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/global_daily/netcdf/p25/chirps-v2.0.{year}.days_p25.nc' for year in years]
-                    download_urls(urls, './data/CHIRPS25', n_workers=5)
-                if ds == 'cgcm3':
-                    urls = [
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_19800101-19891231.nc',
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_19900101-19991231.nc',
-                        'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_20000101-20051231.nc'
-                    ]
-                    download_urls(urls, './data/CGCM3', n_workers=5)
-                if ds == 'cm3':
-                    urls = [
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19800101-19841231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19850101-19891231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19900101-19941231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_19950101-19991231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_20000101-20041231.nc',
-                        'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_20050101-20051231.nc'
-                    ]
-                    download_urls(urls, './data/CM3', n_workers=5)
-                if ds == 'cm5a':
-                    urls = ['http://aims3.llnl.gov/thredds/fileServer/cmip5_css01_data/cmip5/output1/IPSL/IPSL-CM5A-LR/historical/day/atmos/day/r1i1p1/v20110909/prc/prc_day_IPSL-CM5A-LR_historical_r1i1p1_19500101-20051231.nc']
-                    download_urls(urls, './data/CM5A', n_workers=5)
+                    urls = self._get_chirps25_urls(train_dates)
+                    urls += self._get_chirps25_urls(val_dates)
+                    urls += self._get_chirps25_urls(test_dates)
+                elif ds == 'cgcm3':
+                    self.target_direcs.append(dst_direc)
+                    urls = self._get_cgcm3_urls(train_dates)
+                    urls += self._get_cgcm3_urls(val_dates)
+                    urls += self._get_cgcm3_urls(test_dates)
+                elif ds == 'cm3':
+                    self.target_direcs.append(dst_direc)
+                    urls = self._get_cm3_urls(train_dates)
+                    urls += self._get_cm3_urls(val_dates)
+                    urls += self._get_cm3_urls(test_dates)
+                elif ds == 'cm5a':
+                    self.target_direcs.append(dst_direc)
+                    urls = self._get_cm5a_urls(train_dates)
+                    urls += self._get_cm5a_urls(val_dates)
+                    urls += self._get_cm5a_urls(test_dates)
+                else:
+                    raise NotImplementedError
+                    
+                urls = list(set(urls))
+                download_urls(urls, dst_direc, n_workers=n_workers)
+        
+        # Extract data
+        if download or extract:
+            # Target data
+            fnames = ['train_y.npy', 'val_y.npy', 'test_y.npy']
+            all_dates = [train_dates, val_dates, test_dates]
+            all_lats = [train_lats, val_lats, test_lats]
+            all_lons = [train_lons, val_lons, test_lons]
+            if target_dataset == 'chirps25':
+                src = os.path.join(root, 'CHIRPS25')
+                for fname, dates, lats, lons in zip(fnames, all_dates, all_lats, all_lons):
+                    extract_chirps25_data(src, os.path.join(root, fname), lons, lats, dates)
+            else:
+                raise NotImplementedError
 
-        # Define temporal coverage
-        train_dates = ('1981-01-01', '2003-12-31')
-        val_dates = ('2004-01-01', '2004-12-31')
-        test_dates = ('2005-01-01', '2005-12-31')
+            # Input data
+            src = [os.path.join(root, direc) for direc in ['CGCM3', 'CM3', 'CM5A']]
+            fnames = ['train_x.npy', 'val_x.npy', 'test_x.npy']            
+            for fname, dates, lats, lons in zip(fnames, all_dates, all_lats, all_lons):
+                extract_cmip5_data(src, os.path.join(root, fname), lons, lats, dates)
 
-        # Define spatial coverage
-        lons, lats = [0, 0], [0, 0]
-        lons[0], lats[0] = region.top_left_corner
-        lons[1], lats[1] = region.bottom_right_corner
-        lons = np.array(lons)
-        lats = np.array(lats)
+    def _get_chirps25_urls(self, dates: Tuple[str, str]) -> List[str]:
+        start = int(dates[0].split('-')[0])
+        end = int(dates[1].split('-')[0]) + 1
+        years = range(start, end)
+        urls = [
+            'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/'
+            f'global_daily/netcdf/p25/chirps-v2.0.{year}.days_p25.nc'
+            for year in years
+        ]
+        return urls
 
-        # Extract target data
-        if target_dataset == 'chirps25':
-            extract_chirps25_data('./data/CHIRPS25', './data/train_y.npy', lons, lats, train_dates)
-            extract_chirps25_data('./data/CHIRPS25', './data/val_y.npy', lons, lats, val_dates)
-            extract_chirps25_data('./data/CHIRPS25', './data/test_y.npy', lons, lats, test_dates)
-        else:
-            raise NotImplementedError
+    def _get_cgcm3_urls(self, dates: Tuple[str, str]) -> List[str]:
+        start = int(dates[0].split('-')[0]) // 10 * 10
+        end = int(dates[1].split('-')[0]) // 10 * 10 + 10
+        years = range(start, end, 10)
+        urls = [
+            'http://esgf-data1.diasjp.net/thredds/fileServer/esg_dataroot/'
+            'cmip5/output1/MRI/MRI-CGCM3/historical/day/atmos/day/r1i1p1/'
+            f'v20120701/prc/prc_day_MRI-CGCM3_historical_r1i1p1_{year}0101'
+            f'-{year+9}1231.nc'
+            for year in years
+        ]
+        # last file from cgcm3 is 2000-2005 instead of 2000-2009
+        for i in range(len(urls)):
+            if urls[i].endswith('-20091231.nc'):
+                urls[i] = '-'.join(urls[i].split('-')[:-1]) + '-20051231.nc'
+        return urls
 
-        # Extract input data
-        src = ['./data/CGCM3', './data/CM3', './data/CM5A']
-        extract_cmip5_data(src, './data/train_x.npy', lons, lats, train_dates)
-        extract_cmip5_data(src, './data/val_x.npy', lons, lats, val_dates)
-        extract_cmip5_data(src, './data/test_x.npy', lons, lats, test_dates)
+    def _get_cm3_urls(self, dates: Tuple[str, str]) -> List[str]:
+        def round_to_nearest_five(x):
+            if x % 10 < 5:
+                return x // 10 * 10
+            else:
+                return x // 10 * 10 + 5
+        start = round_to_nearest_five(int(dates[0].split('-')[0]))
+        end = round_to_nearest_five(int(dates[1].split('-')[0]) + 5)
+        years = range(start, end, 5)
+        urls = [
+            'http://aims3.llnl.gov/thredds/fileServer/css03_data/cmip5/'
+            'output1/NOAA-GFDL/GFDL-CM3/historical/day/atmos/day/r1i1p1/'
+            f'v20120227/prc/prc_day_GFDL-CM3_historical_r1i1p1_{year}0101'
+            f'-{year+4}1231.nc'
+            for year in years
+        ]
+                # last file from cm3 is 2005-2005 instead of 2005-2009
+        for i in range(len(urls)):
+            if urls[i].endswith('-20091231.nc'):
+                urls[i] = '-'.join(urls[i].split('-')[:-1]) + '-20051231.nc'
+        return urls
+
+    def _get_cm5a_urls(self, dates: Tuple[str, str]) -> List[str]:
+        urls = [
+            'http://aims3.llnl.gov/thredds/fileServer/cmip5_css01_data/cmip5/'
+            'output1/IPSL/IPSL-CM5A-LR/historical/day/atmos/day/r1i1p1/'
+            'v20110909/prc/prc_day_IPSL-CM5A-LR_historical_r1i1p1_19500101'
+            '-20051231.nc'
+        ]
+        return urls
 
     def __len__(self):
         return self.X.shape[0]
 
     def __getitem__(self, idx):
-        return self.X[idx], self.Y[idx]
+        x = self.X[idx]
+        if self.transform:
+            x = self.transform(x)
+        y = self.Y[idx]
+        if self.target_transform:
+            y = self.target_transform(y)
+        return x, y
 
     def get_subset(self, split: str):
         """
@@ -102,25 +194,4 @@ class BSDDataset(torch.utils.data.Dataset):
         else:
             print(f'Split {split} not recognized')
         return self
-            
-    def eval(self, y_pred, y_true):
-        """
-        Computes the RMSE between the predicted and ground truth values.
-        Parameters:
-            - y_pred: model predicted values
-            - y_true: ground truth
-        """
-        mse_loss = torch.nn.MSELoss()
-
-        def nan_to_num(t, mask=None):
-            if mask is None:
-                mask = torch.isnan(t)
-            zeros = torch.zeros_like(t)
-            return torch.where(mask, zeros, t)
-
-        y_pred = torch.tensor(y_pred)
-        y_true = torch.tensor(y_true)
-        y_pred = nan_to_num(y_pred, torch.isnan(y_true))
-        y_true = nan_to_num(y_true)
-        return torch.sqrt(mse_loss(y_pred, y_true))
     

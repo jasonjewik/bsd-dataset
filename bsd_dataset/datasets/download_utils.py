@@ -28,9 +28,13 @@ def download_url(url: str, root: str, filename: Optional[str] = None) -> None:
     if os.path.isfile(fpath):
         os.unlink(fpath)
 
-    wget.download(url, out=fpath)
+    try:
+        wget.download(url, out=fpath, bar=None)
+    except Exception as e:
+        print(e)
+        print(f'could not download {url}')
 
-def download_urls(urls: List[str], root: str, filenames: Optional[List[str]] = None, n_workers: Optional[int] = 1) -> None:
+def download_urls(urls: List[str], root: str, filenames: Optional[List[str]] = None, n_workers: int = 1) -> None:
     """
     Downloads files from a list of URLs and places them in root.
 
