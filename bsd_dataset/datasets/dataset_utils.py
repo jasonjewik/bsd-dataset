@@ -12,6 +12,9 @@ import xarray as xr
 LEAP_YEAR_DATES = np.array([np.datetime64(f'{year}-02-29')
                             for year in range(1984, 2005, 4)])
 
+def irange(start, stop, step=1):
+    return range(start, stop+1, step)
+
 def fix_dates(xdata: xr.Dataset) -> xr.Dataset:
     """
     Converts date ranges because not all of the datasets
