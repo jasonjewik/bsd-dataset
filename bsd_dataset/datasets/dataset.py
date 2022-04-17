@@ -5,9 +5,9 @@ import os
 import torch
 import torchvision.transforms
 
-from bsd_dataset.regions import RegionCoordinates
+from bsd_dataset.regions import Region
 from bsd_dataset.datasets.download_utils import download_urls
-from bsd_dataset.datasets.dataset_utils import extract_chirps25_data, extract_cmip5_data
+from bsd_dataset.datasets.dataset_utils import irange, extract_chirps25_data, extract_cmip5_data
 
 
 class BSDDataset(torch.utils.data.Dataset):
@@ -16,9 +16,9 @@ class BSDDataset(torch.utils.data.Dataset):
         self, 
         input_datasets: List[str],
         target_dataset: str,
-        train_region: RegionCoordinates,
-        val_region: RegionCoordinates,
-        test_region: RegionCoordinates,
+        train_region: Region,
+        val_region: Region,
+        test_region: Region,
         train_dates: Tuple[str, str],
         val_dates: Tuple[str, str],
         test_dates: Tuple[str, str],
@@ -38,10 +38,10 @@ class BSDDataset(torch.utils.data.Dataset):
         self.target_transform = target_transform
 
         # Define spatial coverage
-        def get_lons_lats(region: RegionCoordinates) -> Tuple[np.array, np.array]:
+        def get_lons_lats(region: Region) -> Tuple[np.array, np.array]:
             lons, lats = [0, 0], [0, 0]
-            lons[0], lats[0] = region.top_left_corner
-            lons[1], lats[1] = region.bottom_right_corner
+            lons[0], lats[0] = region.top_left
+            lons[1], lats[1] = region.bottom_right
             lons = np.array(lons)
             lats = np.array(lats)
             return lons, lats
@@ -56,17 +56,16 @@ class BSDDataset(torch.utils.data.Dataset):
 
         if download:
             datasets = input_datasets + [target_dataset] + auxiliary_datasets
+            dates = list(irange(*train_dates)) + list(irange(*val_dates)) + list(irange(*test_dates))
+            dates.sort()
             for ds in datasets:
-                dst_direc = os.path.join(root, ds.upper())
-                if ds == 'chirps25':
-                    urls = self._get_chirps25_urls(train_dates)
-                    urls += self._get_chirps25_urls(val_dates)
-                    urls += self._get_chirps25_urls(test_dates)
+                dst_direc = os.path.join(root, ds.lower())
+                if ds.startswith('chirps'):
+                    res = ds.split('_')[1]
+                    urls = self._get_chirps_urls(res, dates)
                 elif ds == 'cgcm3':
                     self.target_direcs.append(dst_direc)
-                    urls = self._get_cgcm3_urls(train_dates)
-                    urls += self._get_cgcm3_urls(val_dates)
-                    urls += self._get_cgcm3_urls(test_dates)
+                    urls = self._get_cgcm3_urls(dates)
                 elif ds == 'cm3':
                     self.target_direcs.append(dst_direc)
                     urls = self._get_cm3_urls(train_dates)
@@ -77,6 +76,10 @@ class BSDDataset(torch.utils.data.Dataset):
                     urls = self._get_cm5a_urls(train_dates)
                     urls += self._get_cm5a_urls(val_dates)
                     urls += self._get_cm5a_urls(test_dates)
+                elif ds.startswith('gmted2010'):
+                    res = ds.split('_')[1]
+                    res = float(res[0] + '.' + res[1:])
+                    urls = self._get_gmted2010_urls(res)
                 else:
                     raise NotImplementedError
                     
@@ -103,18 +106,19 @@ class BSDDataset(torch.utils.data.Dataset):
             for fname, dates, lats, lons in zip(fnames, all_dates, all_lats, all_lons):
                 extract_cmip5_data(src, os.path.join(root, fname), lons, lats, dates)
 
-    def _get_chirps25_urls(self, dates: Tuple[str, str]) -> List[str]:
-        start = int(dates[0].split('-')[0])
-        end = int(dates[1].split('-')[0]) + 1
-        years = range(start, end)
+    def _get_chirps_urls(self, res: str, dates: Tuple[str, str]) -> List[str]:
+        if min(dates) < 1981 or max(dates) > 2021:
+            raise ValueError('Requested CHIRPS data is out of range, must be in 1981-2021')
         urls = [
             'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/'
-            f'global_daily/netcdf/p25/chirps-v2.0.{year}.days_p25.nc'
-            for year in years
+            f'global_daily/netcdf/p{res}/chirps-v2.0.{year}.days_p{res}.nc'
+            for year in irange(*dates)
         ]
         return urls
 
     def _get_cgcm3_urls(self, dates: Tuple[str, str]) -> List[str]:
+        if min(dates) < 1950 or max(dates) > 2005:
+            raise ValueError('Requested CGCM3 data is out of range, must be in 1950-2005')
         start = int(dates[0].split('-')[0]) // 10 * 10
         end = int(dates[1].split('-')[0]) // 10 * 10 + 10
         years = range(start, end, 10)
@@ -125,13 +129,14 @@ class BSDDataset(torch.utils.data.Dataset):
             f'-{year+9}1231.nc'
             for year in years
         ]
-        # last file from cgcm3 is 2000-2005 instead of 2000-2009
-        for i in range(len(urls)):
-            if urls[i].endswith('-20091231.nc'):
-                urls[i] = '-'.join(urls[i].split('-')[:-1]) + '-20051231.nc'
+        # Last file from cgcm3 is 2000-2005 instead of 2000-2009
+        if urls[-1].endswith('-20091231.nc'):
+            urls[-1] = '-'.join(urls[-1].split('-')[:-1]) + '-20051231.nc'
         return urls
 
     def _get_cm3_urls(self, dates: Tuple[str, str]) -> List[str]:
+        if min(dates) < 1860 or max(dates) > 2005:
+            raise ValueError('Requested CM3 data is out of range, must be in 1860-2005')
         def round_to_nearest_five(x):
             if x % 10 < 5:
                 return x // 10 * 10
@@ -147,13 +152,14 @@ class BSDDataset(torch.utils.data.Dataset):
             f'-{year+4}1231.nc'
             for year in years
         ]
-                # last file from cm3 is 2005-2005 instead of 2005-2009
-        for i in range(len(urls)):
-            if urls[i].endswith('-20091231.nc'):
-                urls[i] = '-'.join(urls[i].split('-')[:-1]) + '-20051231.nc'
+        # Last file from cm3 is 2005-2005 instead of 2005-2009
+        if urls[-1].endswith('-20091231.nc'):
+            urls[-1] = '-'.join(urls[-1].split('-')[:-1]) + '-20051231.nc'
         return urls
 
     def _get_cm5a_urls(self, dates: Tuple[str, str]) -> List[str]:
+        if min(dates) < 1850 or max(dates) > 2005:
+            raise ValueError('Requested CM5A data is out of range, must be in 1850-2005')
         urls = [
             'http://aims3.llnl.gov/thredds/fileServer/cmip5_css01_data/cmip5/'
             'output1/IPSL/IPSL-CM5A-LR/historical/day/atmos/day/r1i1p1/'
@@ -161,6 +167,23 @@ class BSDDataset(torch.utils.data.Dataset):
             '-20051231.nc'
         ]
         return urls
+
+    def _get_gmted2010_urls(self, res: float) -> List[str]:
+        available_resolutions = [0.0625, 0.125, 0.250, 0.500, 0.750, 1.000]
+        if res == 0.0625:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n015_00625deg.nc']
+        elif res == 0.125:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n030_0125deg.nc']
+        elif res == 0.250:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc']
+        elif res == 0.500:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc']
+        elif res == 0.750:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n180_0750deg.nc']
+        elif res == 1.000:
+            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n240_1000deg.nc']
+        else:
+            raise ValueError(f'Requested GMTED resolution is unavailable, must be in {available_resolutions}')
 
     def __len__(self):
         return self.X.shape[0]

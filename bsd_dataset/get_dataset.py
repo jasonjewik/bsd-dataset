@@ -1,24 +1,25 @@
 from __future__ import annotations
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import bsd_dataset
-
 if TYPE_CHECKING:
-    from bsd_dataset.regions import RegionCoordinates
+    from bsd_dataset.regions import Region
+
+import torchvision.transforms
 
 def get_dataset(
     input_datasets: List[str],
     target_dataset: str,
-    train_region: RegionCoordinates,
-    val_region: RegionCoordinates,
-    test_region: RegionCoordinates,
+    train_region: Region,
+    val_region: Region,
+    test_region: Region,
     train_dates: Tuple[str, str],
     val_dates: Tuple[str, str],
     test_dates: Tuple[str, str],
     auxiliary_datasets: List[str] = [],
     variable_dictionary: Dict[str, Any] = {},
-    transform: torchvision.transforms = None,
-    target_transform: torchvision.transforms = None,
+    transform: Optional[torchvision.transforms] = None,
+    target_transform: Optional[torchvision.transforms] = None,
     download: bool = False,
     extract: bool = False,
     root: str = './data') -> None:
