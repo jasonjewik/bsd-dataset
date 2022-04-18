@@ -13,7 +13,7 @@ from bsd_dataset.common.metrics import rmse
 dataset = get_dataset(
     input_datasets=['cm3', 'cgcm3', 'cm5a'],
     target_dataset='chirps25',
-    auxiliary_datasets=['gmted2010_1000']
+    auxiliary_datasets=['gmted2010_1000'],
     train_region=regions.SouthAmerica,
     val_region=regions.SouthAmerica,
     test_region=regions.SouthAmerica,
