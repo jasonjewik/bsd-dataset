@@ -1,5 +1,9 @@
 from .get_dataset import get_dataset
 
+
+__version__ = '0.1.0'
+
+
 input_datasets = [
     'cgcm3',
     'cm3',
@@ -7,8 +11,8 @@ input_datasets = [
 ]
 
 target_datasets = [
-    'chirps05',
-    'chirps25'
+    'chirps_05',
+    'chirps_25'
 ]
 
 auxiliary_datasets = [
