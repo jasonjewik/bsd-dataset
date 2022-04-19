@@ -298,7 +298,8 @@ class BSDDataset(torch.utils.data.Dataset):
         y = self.Y[idx]
         if self.target_transform:
             y = self.target_transform(y)
-        return x, y
+        mask = np.isnan(y)
+        return x, y, mask
 
     def get_subset(self, split: str):
         """
@@ -320,4 +321,3 @@ class BSDDataset(torch.utils.data.Dataset):
         else:
             print(f'Split {split} not recognized')
         return self
-    
