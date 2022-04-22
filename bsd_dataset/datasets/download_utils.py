@@ -10,57 +10,50 @@ import xarray as xr
 import wget
 
 
-def download_url(url: str, root: str, filename: Optional[str] = None) -> None:
+def download_url(url: str, dst: str) -> None:
     """
     Downloads a file from a URL and places it in root.
 
     Parameters:
         url: URL to download the file from.
-        root: Directory to place downloaded file in.
-        filename: Name to save the file under. If not specified, use the basename of the URL.
+        dst: Directory to place downloaded file in.
     """
-    root = os.path.expanduser(root)
-    if filename is None:
-        filename = os.path.basename(url)
-    fpath = os.path.join(root, filename)
-    
-    os.makedirs(root, exist_ok=True)
+    dst = os.path.expanduser(dst)
+    fname = os.path.basename(url)
+    fpath = os.path.join(dst, fname)
+    os.makedirs(dst, exist_ok=True)
     if os.path.isfile(fpath):
         os.unlink(fpath)
-
     try:
         wget.download(url, out=fpath, bar=None)
     except Exception as e:
         print(e)
         print(f'could not download {url}')
 
-def download_urls(urls: List[str], root: str, filenames: Optional[List[str]] = None, n_workers: int = 1) -> None:
+def download_urls(urls: List[str], dsts: List[str], n_workers: int = 1) -> None:
     """
-    Downloads files from a list of URLs and places them in root.
+    Downloads files from a list of URLs and places them in corresponding destinations.
 
     Parameters:
         urls: A list of URLs to download files from
-        root: Directory to place the downloaded files in
-        filenames: A list of names to save the downloaded files under. If specified, must match the length of urls. If not specified, use the basename of each URL.
+        dsts: Directories to place the downloaded files in
         n_workers: If an integer greater than one is specified, that many threads will be used for the downloads. If not specified, no additional threads will be spawned.
     """
-    if filenames is None:
-        filenames = [None] * len(urls)
-    elif len(urls) != len(filenames):
-        raise ValueError('the number of URLs and file names must be the same')
+    if len(urls) != len(dsts):
+        raise ValueError('the number of URLs and output directories must be the same')
     
     if n_workers == 1:
-        for url, fname in zip(urls, filenames):
-            download_url(url, root, fname)
+        for url, dst in zip(urls, dsts):
+            download_url(url, dst)
     else:
         q = queue.Queue()
         def worker():
             while True:
-                url, fname = q.get()
-                download_url(url, root, fname)
+                url, dst = q.get()
+                download_url(url, dst)
                 q.task_done()
         for _ in range(n_workers):
             threading.Thread(target=worker, daemon=True).start()
-        for url, fname in zip(urls, filenames):
-            q.put((url, fname))
+        for url, dst in zip(urls, dsts):
+            q.put((url, dst))
         q.join()

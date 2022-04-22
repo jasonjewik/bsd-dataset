@@ -18,10 +18,10 @@ def get_dataset(
     test_dates: Tuple[str, str],
     auxiliary_datasets: List[str] = [],
     variable_dictionary: Dict[str, Any] = {},
-    transform: Optional[torchvision.transforms] = None,
-    target_transform: Optional[torchvision.transforms] = None,
-    download: bool = False,
-    extract: bool = False,
+    transform: Optional[torchvision.transforms.Compose] = None,
+    target_transform: Optional[torchvision.transforms.Compose] = None,
+    download: Dict[str, bool] = {},
+    extract: Dict[str, bool] = {},
     root: str = './data') -> None:
     """
     Parameters:
@@ -37,14 +37,19 @@ def get_dataset(
         test_dates: A tuple that marks the start and end dates (inclusive) to 
             use in testing.
         auxiliary_datasets: Names of the auxiliary datasets.
-        variable_dictionary: A dictionary of variables to include besides
-            precipitation.
+        variable_dictionary: A dictionary that maps dataset names to options to
+            pass to the CDS API for downloading input datasets. Do not specify
+            format.
         transform: The transforms to apply to the concatenated input and
             auxiliary datasets.
         target_transform: The transforms to apply to the target dataset.
-        download: If true and the requested datasets are not stored locally,
-            download them.
-        extract: If true, extract the data to NumPy format.
+        download: A dictionary that maps dataset names to a boolean indicating
+            whether the dataset needs to be downloaded. If a dataset is not
+            included in this dictionary, the program assumes said dataset needs
+            to be downloaded.
+        extract: Similar to download, but for extracting data to NumPy files
+            train_x.npy, train_y.npy, val_x.npy, val_y.npy, test_x.npy, and
+            test_y.npy.
         root: The directory where the raw data is downloaded to and the
             extracted data is stored.
     """

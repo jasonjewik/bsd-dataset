@@ -1,13 +1,15 @@
 from .get_dataset import get_dataset
-
+from .setup_cdsapi import setup_cdsapi
 
 __version__ = '0.1.0'
 
 
 input_datasets = [
-    'cgcm3',
-    'cm3',
-    'cm5a'
+    'projections-cmip5-daily-single-levels',
+    'projections-cmip5-daily-pressure-levels',
+    'projections-cmip6',
+    'reanalysis-era5-single-levels',
+    'reanalysis-era5-pressure-levels'
 ]
 
 target_datasets = [
