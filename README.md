@@ -50,3 +50,10 @@ for x, y in test_loader:
 # Evaluate
 rmse(y_pred, y_true)
 ```
+
+## Running Tests
+
+```bash
+bsd-dataset$ conda activate downscale-[cpu/gpu]
+bsd-dataset$ python -m pytest tests/
+```
