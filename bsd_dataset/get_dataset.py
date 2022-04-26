@@ -1,7 +1,9 @@
 from __future__ import annotations
+import os
 from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 import bsd_dataset
+from bsd_dataset.setup_cdsapi import CDSAPIHelper
 if TYPE_CHECKING:
     from bsd_dataset.regions import Region
 
@@ -22,7 +24,9 @@ def get_dataset(
     target_transform: Optional[torchvision.transforms.Compose] = None,
     download: Dict[str, bool] = {},
     extract: Dict[str, bool] = {},
-    root: str = './data') -> None:
+    root: str = './data',
+    cds_uid: Optional[str] = None,
+    cds_key: Optional[str] = None) -> None:
     """
     Parameters:
         input_datasets: Names of the input datasets.
@@ -52,7 +56,16 @@ def get_dataset(
             test_y.npy.
         root: The directory where the raw data is downloaded to and the
             extracted data is stored.
+        cds_uid: The UID to pass to the CDS API credential helper.
+        cds_key: The API key to pass to the CDS API credential helper.
     """
+    cdsapi = CDSAPIHelper()
+    if not cdsapi.parse_config() or cds_uid and cds_key:
+        if cds_uid is None and cds_key is None:
+            cdsapi.setup_cli()
+        else:
+            cdsapi.setup(cds_uid, cds_key)
+
     for dataset in input_datasets:
         if dataset not in bsd_dataset.input_datasets:
             raise ValueError(f'The input dataset {dataset} is not recognized. Must be one of {bsd_dataset.input_datasets}.')

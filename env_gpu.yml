@@ -19,3 +19,4 @@ dependencies:
   - pip:
       - wget==3.2
       - cdsapi==0.5.1
+      - pytest==7.1.2

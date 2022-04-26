@@ -1,5 +1,5 @@
+from .setup_cdsapi import setup_cdsapi, CDSAPIHelper, CDSAPIConfig
 from .get_dataset import get_dataset
-from .setup_cdsapi import setup_cdsapi
 
 __version__ = '0.1.0'
 
