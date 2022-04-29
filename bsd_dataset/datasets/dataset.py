@@ -1,22 +1,33 @@
-import os
-from typing import Any, Dict, List, Optional, Tuple
+from pathlib import Path
+import tarfile
+from typing import Dict, List, Optional, Tuple, Union
+from typing_extensions import Self
 
-import cdsapi
 import numpy as np
 import torch
 import torchvision.transforms
 import xarray as xr
 
 from bsd_dataset.regions import Region
-from bsd_dataset.datasets.download_utils import download_urls
-from bsd_dataset.datasets.dataset_utils import irange, fix_dates, match_image_sizes, LEAP_YEAR_DATES
+from bsd_dataset.datasets.download_utils import (
+    download_urls, 
+    multidownload_from_cds, 
+    CDSAPIRequest
+)
+from bsd_dataset.datasets.dataset_utils import (
+    irange, 
+    get_shape_of_largest_array, 
+    match_array_shapes, 
+    lon180_to_lon360, 
+    LEAP_YEAR_DATES
+)
 
 
 class BSDDataset(torch.utils.data.Dataset):
 
     def __init__(
         self, 
-        input_datasets: List[str],
+        input_datasets: Dict[str, Dict[str, Union[str, List[str]]]],
         target_dataset: str,
         train_region: Region,
         val_region: Region,
@@ -24,13 +35,12 @@ class BSDDataset(torch.utils.data.Dataset):
         train_dates: Tuple[str, str],
         val_dates: Tuple[str, str],
         test_dates: Tuple[str, str],
-        auxiliary_datasets: List[str] = [],
-        variable_dictionary: Dict[str, Any] = {},
-        transform: Optional[torchvision.transforms.Compose] = None,
-        target_transform: Optional[torchvision.transforms.Compose] = None,
-        download: Dict[str, bool] = {},
-        extract: Dict[str, bool] = {},
-        root: str = './data'):
+        transform: Optional[torchvision.transforms.Compose],
+        target_transform: Optional[torchvision.transforms.Compose],
+        download: bool,
+        extract: bool,
+        root: Path
+    ) -> Self:
         """
         Parameters:
             See get_dataset.py.
@@ -38,7 +48,6 @@ class BSDDataset(torch.utils.data.Dataset):
         # Save parameters
         self.transform = transform
         self.target_transform = target_transform
-        self.root = root
 
         # Define spatial coverage
         def get_lons_lats(region: Region) -> Tuple[np.array, np.array]:
@@ -52,9 +61,11 @@ class BSDDataset(torch.utils.data.Dataset):
         val_lons, val_lats = get_lons_lats(val_region)
         test_lons, test_lats = get_lons_lats(test_region)
        
-        # Get target data and auxiliary data
-        urls, dsts = [], []
-        if download.get(target_dataset, False):
+        # Download data        
+        if download:
+
+            # Get CHIRPS and GMTED2010 data
+            urls, dsts = [], []
             if target_dataset.startswith('chirps'):
                 train_years = [int(d.split('-')[0]) for d in train_dates]
                 val_years = [int(d.split('-')[0]) for d in val_dates]
@@ -64,53 +75,68 @@ class BSDDataset(torch.utils.data.Dataset):
                     self._get_chirps_urls(res, train_years) +
                     self._get_chirps_urls(res, val_years) +
                     self._get_chirps_urls(res, test_years)))
-                chirps_dst = os.path.join(root, target_dataset)
+                chirps_dst = root / target_dataset
                 urls += chirps_urls
-                dsts += [chirps_dst] * len(chirps_urls)     
-        for ads in auxiliary_datasets:
-            if download.get(ads, False):
-                if ads.startswith('gmted2010'):
-                    res = ads.split('_')[1]
+                dsts += [chirps_dst] * len(chirps_urls)
+            for ds in input_datasets.keys():
+                if ds.startswith('gmted2010'):
+                    res = ds.split('_')[1]
                     res = float(res[0] + '.' + res[1:])
                     urls += self._get_gmted2010_urls(res)
-                    dsts += [os.path.join(root, ads)]
-        download_urls(urls, dsts, n_workers=5)
+                    dsts.append(root / ds)
+            download_urls(urls, dsts, n_workers=5)
 
-        # Get input data
-        c = cdsapi.Client()
-        for idata in input_datasets:
-            if download.get(idata, False):
-                options = variable_dictionary[idata]
-                options['format'] = 'tgz'
-                output = f'{idata}.tar.gz'
-                c.retrieve(idata, options, output)
+            # Get CDS data
+            cds_api_requests = {}
+            for ds, options in input_datasets.items():
+                if ds.startswith('cds'):
+                    dataset, model = ds.split(':')[1:]
+                    options['experiment'] = 'historical'
+                    options['format'] = 'tgz'
+                    output = root / 'cds' / f'{dataset}.{model}.tar.gz'
+                    req = CDSAPIRequest(dataset, options, output)
+                    cds_api_requests[ds] = req
+            multidownload_from_cds(cds_api_requests, n_workers=5)
         
-        # Extract target data
-        if extract.get(target_dataset, False):            
+        # Extract data
+        if extract:
+
+            # Get CHIRPS data
             if target_dataset.startswith('chirps'):
-                fnames = ['train_y.npy', 'val_y.npy', 'test_y.npy']
+                fnames = [root / 'train_y.npy', root / 'val_y.npy', root / 'test_y.npy']
                 all_dates = [train_dates, val_dates, test_dates]
                 all_lats = [train_lats, val_lats, test_lats]
                 all_lons = [train_lons, val_lons, test_lons]
-                src = os.path.join(root, target_dataset)
-                for fname, dates, lats, lons in zip(fnames, all_dates, all_lats, all_lons):
-                    self._extract_chirps_data(src, os.path.join(root, fname), lons, lats, dates)
-        
-        # Extract auxiliary data
-        for ads in auxiliary_datasets:
-            if extract.get(ads, False):                
-                if ads.startswith('gmted2010'):
-                    src = os.path.join(root, ads)
-                    fnames = [f'{f}_{ads}.npy' for f in ['train', 'val', 'test']]
-                    all_lats = [train_lats, val_lats, test_lats]
-                    all_lons = [train_lons, val_lons, test_lons]
-                    for fname, lats, lons in zip(fnames, all_lats, all_lons):
-                        self._extract_gmted2010_data(src, os.path.join(root, fname), lons, lats)
+                src = root / target_dataset
+                iterzip = zip(fnames, all_dates, all_lats, all_lons)
+                for fname, dates, lats, lons in iterzip:
+                    npdata = self._extract_chirps_data(src, lons, lats, dates)
+                    with open(fname, 'wb') as f:
+                        np.save(f, npdata)
 
-        # Extract input data
-        for ids in input_datasets:
-            if extract.get(ids, False):
-                pass
+            # Extract input
+            def extract_input_data(dst: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> None:
+                lons = lon180_to_lon360(lons)
+                data = []
+                for ds in input_datasets.keys():
+                    if ds.startswith('gmted2010'):
+                        src = root / ds                   
+                        npdata = self._extract_gmted2010_data(src, lons, lats, dates)
+                        data.append(npdata)
+                    if ds.startswith('cds'):
+                        src = cds_api_requests[ds].output
+                        npdata = self._extract_cds_data(src, lons, lats, dates)
+                        data.append(npdata)
+                shape = get_shape_of_largest_array(data)
+                data = match_array_shapes(data, shape)
+                data = np.stack(data)  # channel x time x lon x lat
+                with open(dst, 'wb') as f:
+                    np.save(f, npdata)
+
+            extract_input_data(root / 'train_x.npy', train_lons, train_lats, train_dates)
+            extract_input_data(root / 'val_x.npy', val_lons, val_lats, val_dates)
+            extract_input_data(root / 'test_x.npy', test_lons, test_lats, test_dates)
+
 
     def _get_chirps_urls(self, res: str, years: Tuple[int, int]) -> List[str]:        
         if years[0] < 1981 or years[1] > 2021:
@@ -123,6 +149,10 @@ class BSDDataset(torch.utils.data.Dataset):
         return urls
 
     def _get_gmted2010_urls(self, res: float) -> List[str]:
+        """
+        Parameters:
+            res: The resolution to download.
+        """
         available_resolutions = [0.0625, 0.125, 0.250, 0.500, 0.750, 1.000]
         if res == 0.0625:
             return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n015_00625deg.nc']
@@ -139,16 +169,13 @@ class BSDDataset(torch.utils.data.Dataset):
         else:
             raise ValueError(f'Requested GMTED resolution is unavailable, must be in {available_resolutions}')
             
-    def _extract_chirps_data(self, src: str, dst: str, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> None:
+    def _extract_chirps_data(self, src: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> np.array:
         """
-        Extract high-resolution target data.
-
         Parameters:
-          - src: the directory to read from
-          - dst: the npy file to write to
-          - lons: the longitudinal bounds
-          - lats: the latitudinal bounds
-          - dates: the temporal range of the data
+            src: The directory to read from.
+            lons: The longitudinal bounds.
+            lats: The latitudinal bounds.
+            dates: The temporal range of the data.
         """
         ds = xr.open_mfdataset(f'{src}/*.nc')
         xdata = ds.precip.sel(
@@ -159,31 +186,52 @@ class BSDDataset(torch.utils.data.Dataset):
         xdata = xdata.where(mask, drop=True)
         npdata = xdata.values  # time x lat x lon
         npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-        with open(dst, 'wb') as f:
-            np.save(f, npdata)
+        return npdata
             
-    def _extract_gmted2010_data(self, src: str, dst: str, lons: np.array, lats: np.array) -> None:
+    def _extract_gmted2010_data(self, src: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> np.array:
         """
-        Extract auxiliary data.
-
         Parameters:
-          - src: the directory to read from
-          - dst: the npy file to write to
-          - lons: the longitudinal bounds
-          - lats: the latitudinal bounds
+            src: The directory to read from.
+            lons: The longitudinal bounds.
+            lats: The latitudinal bounds.
+            dates: The dates to cover.
         """
         ds = xr.open_mfdataset(f'{src}/*.nc')
         xdata = ds.elevation.sel(
             latitude=slice(*sorted(lats)), 
             longitude=slice(*sorted(lons)))
         npdata = xdata.values.T  # lon x lat
-        with open(dst, 'wb') as f:
-            np.save(f, npdata)
+        npdata = np.expand_dims(npdata, 0)
+        n_days = (np.datetime64(dates[1]) - np.datetime64(dates[0])).item().days
+        npdata = np.repeat(npdata, n_days, axis=0)  # time x lon x lat
+        return npdata
 
-    def __len__(self):
+    def _extract_cds_data(self, src: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> np.array:
+        """
+        Parameters:
+            src: The tarfile to read from.
+            lons: The longitudinal bounds.
+            lats: The latitudinal bounds.
+            dates: The dates to cover.
+        """
+        tar = tarfile.open(src)
+        fname = tar.getnames()[0]
+        var_name = fname.split('_')[0]
+        tar.extract(fname, path=src.parent)
+        tar.close()
+        ds = xr.open_dataset(src.parent / fname)
+        xdata = getattr(ds, var_name).sel(
+            time=slice(*dates),
+            latitude=slice(*sorted(lats)),
+            longitude=slice(*sorted(lons)))
+        npdata = xdata.values  # time x lat x lon
+        npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
+        return npdata
+
+    def __len__(self) -> int:
         return self.X.shape[0]
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
         x = self.X[idx]
         if self.transform:
             x = self.transform(x)
@@ -193,7 +241,7 @@ class BSDDataset(torch.utils.data.Dataset):
         mask = np.isnan(y)
         return x, y, mask
 
-    def get_subset(self, split: str):
+    def get_subset(self, split: str) -> Self:
         """
         Loads the training, validation, or test data.
         Parameters:

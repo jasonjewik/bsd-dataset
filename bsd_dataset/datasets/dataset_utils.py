@@ -19,22 +19,36 @@ def irange(start, stop, step=1):
     """
     return range(start, stop+1, step)
 
-def fix_dates(xdata: xr.Dataset) -> xr.Dataset:
+def get_shape_of_largest_array(arr: List[np.array]) -> Tuple:
     """
-    Converts date ranges because not all of the datasets
-    operate on the same time interval precision, which
-    messes with indexing.
+    Takes a list of images, each of the shape (channels, width, height) and
+    returns the shape of the one with the largest area (width * height).
     """
-    xdata['time'] = pd.date_range(
-        xdata['time'][0].values,
-        periods=len(xdata['time']),
-        freq='1D').floor('D')
-    return xdata
+    largest_area = 0
+    largest_shape = None
+    for a in arr:
+        area = np.product(a.shape[1:])
+        if area > largest_area:
+            largest_area = area
+            largest_shape = a.shape[1:]
+    return largest_shape
 
-def match_image_sizes(arr: List[np.array], shape: Tuple[int, int]) -> np.array:
+def match_array_shapes(arr: List[np.array], shape: Tuple[int, int]) -> np.array:
     """
     Takes a list of images, each of shape (channels, width, height) and resizes 
     them to match the given shape.
     """
-    arr = np.array([skimage.transform.resize(a, shape) for a in arr])
+    arr = []
+    for a in arr:
+        channels = a.shape[0]
+        resized_shape = (channels,) + shape
+        resized_a = skimage.transform.resize(a, resized_shape, order=0, preserve_range=True)
+        arr.append(resized_a)
+    arr = np.array(arr)
     return arr
+
+def lon180_to_lon360(lon: float) -> float:
+    return (lon + 360) % 360
+
+def lon360_to_lon180(lon: float) -> float:
+    return ((lon + 180) % 360) - 180
