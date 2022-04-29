@@ -1,16 +1,17 @@
 from __future__ import annotations
-import os
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING, Union
 
 import bsd_dataset
-from bsd_dataset.setup_cdsapi import CDSAPIHelper
+from bsd_dataset.setup_cdsapi import CDSAPICredentialHelper
 if TYPE_CHECKING:
     from bsd_dataset.regions import Region
 
+import numpy as np
 import torchvision.transforms
 
 def get_dataset(
-    input_datasets: List[str],
+    input_datasets: Dict[str, Dict[str, Union[str, List[str]]]],
     target_dataset: str,
     train_region: Region,
     val_region: Region,
@@ -18,18 +19,18 @@ def get_dataset(
     train_dates: Tuple[str, str],
     val_dates: Tuple[str, str],
     test_dates: Tuple[str, str],
-    auxiliary_datasets: List[str] = [],
-    variable_dictionary: Dict[str, Any] = {},
     transform: Optional[torchvision.transforms.Compose] = None,
     target_transform: Optional[torchvision.transforms.Compose] = None,
-    download: Dict[str, bool] = {},
-    extract: Dict[str, bool] = {},
+    download: bool = False,
+    extract: bool = False,
     root: str = './data',
     cds_uid: Optional[str] = None,
-    cds_key: Optional[str] = None) -> None:
+    cds_key: Optional[str] = None
+) -> None:
     """
     Parameters:
-        input_datasets: Names of the input datasets.
+        input_datasets: A dictionary that maps dataset names to the ensemble
+            member and variables to use.
         target_dataset: Name of the target dataset.
         train_region: Coordinates that define the region to use in training.
         val_region: Coordinates that define the region to use in validation.
@@ -40,41 +41,48 @@ def get_dataset(
             use in validation.
         test_dates: A tuple that marks the start and end dates (inclusive) to 
             use in testing.
-        auxiliary_datasets: Names of the auxiliary datasets.
-        variable_dictionary: A dictionary that maps dataset names to options to
-            pass to the CDS API for downloading input datasets. Do not specify
-            format.
-        transform: The transforms to apply to the concatenated input and
-            auxiliary datasets.
+        transform: The transforms to apply to the concatenated input datasets.
         target_transform: The transforms to apply to the target dataset.
-        download: A dictionary that maps dataset names to a boolean indicating
-            whether the dataset needs to be downloaded. If a dataset is not
-            included in this dictionary, the program assumes said dataset needs
-            to be downloaded.
-        extract: Similar to download, but for extracting data to NumPy files
-            train_x.npy, train_y.npy, val_x.npy, val_y.npy, test_x.npy, and
-            test_y.npy.
+        download: Download all datasets, if True. Default is False.
+        extract: Extract datasets, if True. Default is False.
         root: The directory where the raw data is downloaded to and the
             extracted data is stored.
         cds_uid: The UID to pass to the CDS API credential helper.
         cds_key: The API key to pass to the CDS API credential helper.
     """
-    cdsapi = CDSAPIHelper()
-    if not cdsapi.parse_config() or cds_uid and cds_key:
+    # Check for CDS 
+    helper = CDSAPICredentialHelper()
+    if not helper.parse_config() or cds_uid and cds_key:
         if cds_uid is None and cds_key is None:
-            cdsapi.setup_cli()
+            helper.setup_cli()
         else:
-            cdsapi.setup(cds_uid, cds_key)
+            helper.setup(cds_uid, cds_key)
 
+    # Validate datasets
     for dataset in input_datasets:
         if dataset not in bsd_dataset.input_datasets:
-            raise ValueError(f'The input dataset {dataset} is not recognized. Must be one of {bsd_dataset.input_datasets}.')
+            raise ValueError(
+                f'The input dataset {dataset} is not recognized.'
+                f' Must be one of {bsd_dataset.input_datasets}.'
+            )
     if target_dataset not in bsd_dataset.target_datasets:
-        raise ValueError(f'The target dataset {target_dataset} is not recognized. Must be one of {bsd_dataset.target_datasets}.')
-    for dataset in auxiliary_datasets:
-        if dataset not in bsd_dataset.auxiliary_datasets:
-            raise ValueError(f'The auxiliary dataset {dataset} is not recognized. Must be one of {bsd_dataset.auxiliary_dataset}.')
+        raise ValueError(
+            f'The target dataset {target_dataset} is not recognized. Must be'
+            f' one of {bsd_dataset.target_datasets}.'
+        )
 
+    # Validate dates
+    dates = train_dates + val_dates + test_dates
+    for d in dates:
+        np.datetime64(d)
+
+    # Validate root
+    root = Path(root).expanduser().resolve()
+    if not root.is_dir():
+        print(f'WARNING: {root} does not exist, attempting to create...')
+        root.mkdir()
+
+    # Get dataset
     from bsd_dataset.datasets.dataset import BSDDataset
     return BSDDataset(
         input_datasets,
@@ -85,8 +93,6 @@ def get_dataset(
         train_dates,
         val_dates,
         test_dates,
-        auxiliary_datasets,
-        variable_dictionary,
         transform,
         target_transform,
         download,

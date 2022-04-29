@@ -15,7 +15,7 @@ class CDSAPIConfig:
         return self.url != '' and self.uid != '' and self.apikey != ''
 
 
-class CDSAPIHelper:
+class CDSAPICredentialHelper:
     def __init__(self, fpath: Optional[str] = None):
         system = platform.system()
         if system == 'Linux' or system == 'Darwin':
@@ -144,9 +144,9 @@ class CDSAPIHelper:
 
 
 def setup_cdsapi(fpath: Optional[str] = None):
-    """Wrapper for the CDS API helper."""
-    handler = CDSAPIHelper(fpath)
-    handler.setup_cli()
+    """Wrapper for the CDS API credential helper."""
+    helper = CDSAPICredentialHelper(fpath)
+    helper.setup_cli()
 
 
 if __name__ == '__main__':
