@@ -19,8 +19,7 @@ from bsd_dataset.datasets.dataset_utils import (
     get_shape_of_largest_array, 
     match_array_shapes, 
     lon180_to_lon360,
-    get_lon_mask,
-    LEAP_YEAR_DATES
+    get_lon_mask
 )
 
 
@@ -188,8 +187,8 @@ class BSDDataset(torch.utils.data.Dataset):
             time=slice(*dates),
             latitude=slice(*sorted(lats)), 
             longitude=slice(*sorted(lons)))
-        mask = ~xdata['time'].isin(LEAP_YEAR_DATES)
-        xdata = xdata.where(mask, drop=True)
+        # Drop leap days since CDS datasets don't have those
+        xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
         npdata = xdata.values  # time x lat x lon
         npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
         return npdata
