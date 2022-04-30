@@ -59,15 +59,15 @@ def get_dataset(
             helper.setup(cds_uid, cds_key)
 
     # Validate datasets
-    for dataset in input_datasets:
+    for dataset in input_datasets.keys():
         if dataset not in bsd_dataset.input_datasets:
             raise ValueError(
-                f'The input dataset {dataset} is not recognized.'
+                f'The input dataset "{dataset}" is not recognized.'
                 f' Must be one of {bsd_dataset.input_datasets}.'
             )
     if target_dataset not in bsd_dataset.target_datasets:
         raise ValueError(
-            f'The target dataset {target_dataset} is not recognized. Must be'
+            f'The target dataset "{target_dataset}" is not recognized. Must be'
             f' one of {bsd_dataset.target_datasets}.'
         )
 

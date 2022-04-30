@@ -15,7 +15,7 @@ input_datasets = [
     'cds:cmip5-pressure-levels:bnu_esm',
     'gmted2010_00625',
     'gmted2010_0125',
-    'gtmed2010_0250',
+    'gmted2010_0250',
     'gmted2010_0500',
     'gmted2010_0750',
     'gmted2010_1000'    
