@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 import threading
@@ -17,10 +18,6 @@ class CDSAPIRequest:
         self.options = options
         self.output = output.expanduser().resolve()
 
-    @property
-    def options(self):
-        return str(self.options)
-
 
 def download_url(url: str, dst: Path) -> None:
     """
@@ -36,7 +33,7 @@ def download_url(url: str, dst: Path) -> None:
     dst.mkdir(exist_ok=True)
     fpath.unlink(missing_ok=True)
     try:
-        wget.download(url, out=fpath, bar=None)
+        wget.download(url, out=str(fpath))
     except Exception as e:
         print(e)
         print(f'could not download {url}')
@@ -82,7 +79,7 @@ def download_from_cds(request: CDSAPIRequest) -> None:
     c = cdsapi.Client()
     c.retrieve(request.dataset, request.options, request.output)
 
-def multidownload_from_cds(requests: List[CDSAPIRequest], n_workers: int = 1) -> None:
+def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 1) -> None:
     """
     Downloads from CDS according to the passed in requests.
 
@@ -102,6 +99,6 @@ def multidownload_from_cds(requests: List[CDSAPIRequest], n_workers: int = 1) ->
                 q.task_done()
         for _ in range(n_workers):
             threading.Thread(target=worker, daemon=True).start()
-        for req in requests:
+        for req in requests.values():
             q.put(req)
         q.join()

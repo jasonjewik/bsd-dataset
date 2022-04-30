@@ -33,22 +33,25 @@ def get_shape_of_largest_array(arr: List[np.array]) -> Tuple:
             largest_shape = a.shape[1:]
     return largest_shape
 
-def match_array_shapes(arr: List[np.array], shape: Tuple[int, int]) -> np.array:
+def match_array_shapes(arr: List[np.array], shape: Tuple[int, int]) -> List[np.array]:
     """
     Takes a list of images, each of shape (channels, width, height) and resizes 
     them to match the given shape.
     """
-    arr = []
+    result = []    
     for a in arr:
         channels = a.shape[0]
         resized_shape = (channels,) + shape
         resized_a = skimage.transform.resize(a, resized_shape, order=0, preserve_range=True)
-        arr.append(resized_a)
-    arr = np.array(arr)
-    return arr
+        result.append(resized_a)
+    return result
 
 def lon180_to_lon360(lon: float) -> float:
     return (lon + 360) % 360
 
 def lon360_to_lon180(lon: float) -> float:
     return ((lon + 180) % 360) - 180
+
+def get_lon_mask(da: xr.DataArray, lons: np.array) -> xr.DataArray:
+    mask = da.values[(da < min(lons)) | (da > max(lons))]
+    return mask
