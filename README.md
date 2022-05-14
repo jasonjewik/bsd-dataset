@@ -150,3 +150,9 @@ dataset = get_dataset(
     ...
 )
 ```
+
+## Running tests
+
+```shell
+bsd-dataset$ python -m pytest tests
+```

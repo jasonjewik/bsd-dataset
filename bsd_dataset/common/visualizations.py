@@ -56,7 +56,9 @@ def show_map(fname: str,
     if region:
         x1, y1 = src.index(*region.top_left)
         x2, y2 = src.index(*region.bottom_right)
-        window = Window.from_slices(slice(x1, x2), slice(y1, y2))
+        xx = [max(0, x1), x2]
+        yy = [y1, y2]
+        window = Window.from_slices(slice(*xx), slice(*yy))
         arr = src.read(day, window=window)
     else:
         arr = src.read(day)
