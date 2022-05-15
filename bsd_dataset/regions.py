@@ -68,8 +68,6 @@ class Region:
             top_left=tl,
             bottom_right=br,
             longitude_range=180)
-        print(self)
-        print(new_region)
         return new_region
 
     def as360(self):
