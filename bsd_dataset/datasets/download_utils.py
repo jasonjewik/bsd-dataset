@@ -1,12 +1,12 @@
-import json
 import os
 from pathlib import Path
 import threading
-from typing import Dict, List
+from typing import Dict, List, Tuple
 import queue
 
 import wget
 import cdsapi
+import numpy as np
 
 
 class CDSAPIRequest:
@@ -18,6 +18,36 @@ class CDSAPIRequest:
         self.options = options
         self.output = output.expanduser().resolve()
 
+
+def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], bool]:
+    if len(periods) == 0:
+        return [], False
+    
+    selected = []
+    success = False
+    np_start = np.datetime64(start)
+    np_end = np.datetime64(end)
+    
+    for period_start, period_end in periods:
+        np_period_start = np.datetime64(period_start)
+        np_period_end = np.datetime64(period_end)
+
+        # start and end engulf the period completely
+        if np_start <= np_period_start <= np_period_end <= np_end:
+            selected.append((period_start, period_end))
+            success = True
+        
+        # end comes between period start and period end
+        elif np_period_start <= np_end <= np_period_end:
+            selected.append((period_start, period_end))
+            success = True
+
+        # start comes between period start and period end
+        elif np_period_start <= np_start <= np_period_end:
+            selected.append((period_start, period_end))
+            success = True
+
+    return selected, success
 
 def download_url(url: str, dst: Path) -> None:
     """
