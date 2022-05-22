@@ -21,7 +21,8 @@ class DatasetRequest:
         return result
 
     def is_cds_req(self) -> bool:
-        return getattr(self, 'cds', False)
+        cds_datasets = ['projections-cmip5-daily-single-levels']
+        return self.dataset in cds_datasets
 
 @dataclass
 class CDSAPIRequest:
@@ -38,16 +39,21 @@ class CDSAPIRequestBuilder:
             raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "model"')
         try:
             variable = getattr(dataset_request, 'variable')
-            if type(variable) == list:
-                assert len(variable) > 0
-                if len(variable) == 1:
-                    variable = variable[0]
-            elif type(variable) == str:
-                pass
-            else:
-                raise ValueError(f'CDS request {str(dataset_request)} has a malformed "variable" argument')
         except:
-            raise AttributeError(f'CDS request {str(dataset_request)} is missing or has empty required parameter "variable"')
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "variable"')
+        if type(variable) == list:
+            if len(variable) == 0:
+                raise ValueError(f'CDS request {str(dataset_request)} has empty required parameter "variable')            
+            for var in variable:
+                if var not in self.get_variables(model):
+                    raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {var}')
+            if len(variable) == 1:
+                variable = variable[0]
+        elif type(variable) == str:
+            if variable not in self.get_variables(model):
+                raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {variable}')
+        else:
+            raise TypeError(f'CDS request {str(dataset_request)} "variable" parameter must be str or list type')
         try:
             ensemble_member = getattr(dataset_request, 'ensemble_member')
         except:
@@ -136,6 +142,36 @@ class CDSAPIRequestBuilder:
                 ('1959-12-01', '1984-11-30'),
                 ('1984-12-01', '2005-12-30')
             ]
+
+    def get_variables(self, model: str) -> List[str]:
+        all_vars = [
+            'snowfall',
+            '10m_wind_speed',
+            '2m_temperature',
+            'mean_precipitation_flux', 
+            'mean_sea_level_pressure',
+            'near_surface_specific_humidity',
+            'surface_solar_radiation_downwards',
+            'daily_near_surface_relative_humidity',
+            'maximum_2m_temperature_in_the_last_24_hours',
+            'minimum_2m_temperature_in_the_last_24_hours'            
+        ]
+
+        if model == 'ccsm4':
+            all_vars.remove('10m_wind_speed')
+            all_vars.remove('daily_near_surface_relative_humidity')
+            return all_vars
+        if model == 'gfdl_cm3':
+            return all_vars
+        if model == 'ipsl_cm5a_mr':
+            return all_vars
+        if model == 'bnu_esm':
+            return all_vars
+        if model == 'hadcm3':
+            all_vars.remove('snowfall')
+            all_vars.remove('surface_solar_radiation_downwards')
+            all_vars.remove('daily_near_surface_relative_humidity')
+            return all_vars
 
 def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], bool]:
     if len(periods) == 0:
