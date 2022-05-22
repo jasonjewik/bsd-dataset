@@ -1,6 +1,8 @@
+from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import sys
 import threading
 from typing import Any, Dict, List, Tuple
 import queue
@@ -9,6 +11,16 @@ import wget
 import cdsapi
 import numpy as np
 
+
+@contextmanager
+def suppress_stdout():
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        sys.stdout = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout         
 
 class DatasetRequest:
     def __init__(self, dataset: str, **kwargs: Dict[str, Any]):
@@ -217,7 +229,7 @@ def download_url(url: str, dst: Path) -> None:
     dst.mkdir(exist_ok=True)
     fpath.unlink(missing_ok=True)
     try:
-        wget.download(url, out=str(fpath))
+        wget.download(url, out=str(fpath), bar=None)
     except Exception as e:
         print(e)
         print(f'could not download {url}')
@@ -260,8 +272,9 @@ def download_from_cds(request: CDSAPIRequest) -> None:
     dst = request.output
     os.makedirs(dst.parent, exist_ok=True)
     dst.unlink(missing_ok=True)
-    c = cdsapi.Client()
-    c.retrieve(request.dataset, request.options, request.output)
+    with suppress_stdout():
+        c = cdsapi.Client()
+        c.retrieve(request.dataset, request.options, request.output)
 
 def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 1) -> None:
     """

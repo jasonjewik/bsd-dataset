@@ -125,14 +125,12 @@ CentralAmerica = Region(
     top_left=Coordinate(30, 240),
     bottom_right=Coordinate(-15, 335),
     longitude_range=360)
-
     
 NorthAmerica = Region(
     name='North America',
     top_left=Coordinate(65, 220),
     bottom_right=Coordinate(15, 300),
     longitude_range=360)
-
     
 Europe = Region(
     name='Europe',
@@ -140,13 +138,11 @@ Europe = Region(
     bottom_right=Coordinate(30, 40),
     longitude_range=360)
 
-
 Africa = Region(
     name='Africa',
     top_left=Coordinate(40, 335),
     bottom_right=Coordinate(-40, 60),
     longitude_range=360)
-
 
 SouthAsia = Region(
     name='South Asia',
@@ -154,13 +150,11 @@ SouthAsia = Region(
     bottom_right=Coordinate(-15, 110),
     longitude_range=360)
 
-
 EastAsia = Region(
     name='East Asia',
     top_left=Coordinate(55, 70),
     bottom_right=Coordinate(5, 150),
     longitude_range=360)
-
 
 CentralAsia = Region(
     name='Central Asia',
@@ -168,13 +162,11 @@ CentralAsia = Region(
     bottom_right=Coordinate(20, 120),
     longitude_range=360)
 
-
 Australasia = Region(
     name='Australasia',
     top_left=Coordinate(8, 100),
     bottom_right=Coordinate(-49, 179),
     longitude_range=360)
-
 
 Mediterranean = Region(
     name='Mediterranean',
@@ -182,19 +174,24 @@ Mediterranean = Region(
     bottom_right=Coordinate(25, 45),
     longitude_range=360)
 
-
 MENA = Region(
     name='Middle East and North Africa',
     top_left=Coordinate(45, 340),
     bottom_right=Coordinate(-7, 76),
     longitude_range=360)
 
-
 SoutheastAsia = Region(
     name='Southeast Asia',
     top_left=Coordinate(30, 90),
     bottom_right=Coordinate(-15, 147),
     longitude_range=360)
+
+# Region for testing
+California = Region(
+    name='California',
+    top_left=Coordinate(42, -124),
+    bottom_right=Coordinate(32, -114),
+    longitude_range=180)
 
 regions = [
     SouthAmerica,
@@ -208,5 +205,6 @@ regions = [
     Australasia,
     Mediterranean,
     MENA,
-    SoutheastAsia
+    SoutheastAsia,
+    California
 ]

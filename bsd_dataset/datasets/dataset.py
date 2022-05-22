@@ -39,11 +39,9 @@ class BSDDataset(torch.utils.data.Dataset):
         test_dates: Tuple[str, str],
         transform: Optional[torchvision.transforms.Compose],
         target_transform: Optional[torchvision.transforms.Compose],
-        download: bool,
-        extract: bool,
         root: Path
     ):
-        # Save parameters
+        # Save arguments
         self.input_datasets = input_datasets
         self.target_dataset = target_dataset
         self.train_region = train_region
@@ -55,54 +53,9 @@ class BSDDataset(torch.utils.data.Dataset):
         self.transform = transform
         self.target_transform = target_transform
         self.root = root
-        
-        # Check input data
-        cds_api_requests = []
-        builder = CDSAPIRequestBuilder()
-        input_urls, input_dstdirs = [], []
-        for ds_req in input_datasets:
-            if ds_req.is_cds_req():
-                cds_api_req = builder.build(root, ds_req, train_dates, val_dates, test_dates)
-                cds_api_requests.append(cds_api_req)
-            if ds_req.dataset == 'gmted2010':
-                input_urls.append(self.get_gmted2010_url(ds_req))
-                input_dstdirs.append(root / 'gmted2010')
-    
-        # Check target data
-        target_urls, target_dstdirs = [], []
-        if target_dataset.dataset == 'chirps':
-            chirps_urls = self.get_chirps_urls(target_dataset)            
-            chirps_dstdirs = [root / target_dataset] * len(chirps_urls)
-            target_urls.extend(chirps_urls)
-            target_dstdirs.extend(chirps_dstdirs)
-       
-        # Download data
-        if download:
-            download_urls(input_urls + target_urls, input_dstdirs + target_dstdirs, n_workers=5)
-            multidownload_from_cds(cds_api_requests, n_workers=5)
-        
-        # Extract data
-        if extract:
-            
-            splits = ['train', 'val', 'test']
-            cds_direcs = self.extract_cds_targz(cds_api_requests)
-            # Returns a list (split) of lists (data source) of Numpy arrays
-            cds_data = list(map(self.extract_cds_data, splits, [cds_direcs] * len(splits)))
-            # Returns a list (split) of NumPy arrays
-            gmted2010_data = list(map(self.extract_gmted2010_data, splits, [root / 'gmted2010'] * len(splits)))
 
-            # Save separately to save room on disk, scaling and concatenation can happen later
-            for split, cdsd, gmtedd in zip(splits, cds_data, gmted2010_data):
-                with open(root / f'{split}_x.npz', 'wb') as f:
-                    np.savez(f, *cdsd, gmted2010=gmtedd)
-
-            if target_dataset.dataset == 'chirps':
-                # Returns a list (split) of NumPy arrays
-                target_data = list(map(self.extract_chirps_data, splits, target_dstdirs))
-            
-            for split, td in zip(splits, target_data):
-                with open(root / f'{split}_y.npz', 'wb') as f:
-                    np.savez(f, target=td)
+        # Build parameters
+        self.built_download_requests = False
 
     def __len__(self) -> int:
         return self.X.shape[0]
@@ -116,6 +69,86 @@ class BSDDataset(torch.utils.data.Dataset):
             y = self.target_transform(y)
         mask = np.isnan(y)
         return x, y, mask
+
+    def build_download_requests(self) -> None:
+        cds_api_requests = []
+        builder = CDSAPIRequestBuilder()
+        input_urls, input_dstdirs = [], []
+        for ds_req in self.input_datasets:
+            if ds_req.is_cds_req():
+                cds_api_req = builder.build(
+                    self.root,
+                    ds_req, 
+                    self.train_dates, 
+                    self.val_dates, 
+                    self.test_dates
+                )
+                cds_api_requests.append(cds_api_req)
+            if ds_req.dataset == 'gmted2010':
+                input_urls.append(self.get_gmted2010_url(ds_req))
+                input_dstdirs.append(self.root / 'gmted2010')       
+    
+        target_urls, target_dstdirs = [], []
+        if self.target_dataset.dataset == 'chirps':
+            chirps_urls = self.get_chirps_urls(self.target_dataset)            
+            chirps_dstdirs = [self.root / 'chirps'] * len(chirps_urls)
+            target_urls.extend(chirps_urls)
+            target_dstdirs.extend(chirps_dstdirs)
+                
+        self.cds_api_requests = cds_api_requests
+        self.input_urls = input_urls
+        self.input_dstdirs = input_dstdirs
+        self.target_urls = target_urls
+        self.target_dstdirs = target_dstdirs
+        self.built_download_requests = True
+       
+    def download(self):
+        if not self.built_download_requests:
+            print('ERROR: download requests not yet built')
+            return
+        print(
+            'WARNING: If requesting a lot of data (several GB) from CDS,\n'
+            'CDS may take a long while to prepare the data for you.\n'
+            'You can check on the status of your request at this link:'
+            ' https://cds.climate.copernicus.eu/cdsapp#!/yourrequests.'
+        )
+        download_urls(
+            self.input_urls + self.target_urls, 
+            self.input_dstdirs + self.target_dstdirs,
+            n_workers=5
+        )
+        multidownload_from_cds(self.cds_api_requests, n_workers=5)
+        
+    def extract(self):
+        if not self.built_download_requests:
+            print('ERROR: download requests not yet built')
+            return
+
+        splits = ['train', 'val', 'test']
+        cds_direcs = self.extract_cds_targz(self.cds_api_requests)
+
+        # Returns a list (split) of lists (data source) of Numpy arrays
+        cds_data = list(map(self.extract_cds_data, splits, [cds_direcs] * len(splits)))
+
+        # Returns a list (split) of NumPy arrays
+        gmted2010_data = list(map(
+            self.extract_gmted2010_data, 
+            splits, 
+            [self.root / 'gmted2010'] * len(splits)
+        ))
+
+        # Save separately to save room on disk, scaling and concatenation can happen later
+        for split, cdsd, gmtedd in zip(splits, cds_data, gmted2010_data):
+            with open(self.root / f'{split}_x.npz', 'wb') as f:
+                np.savez(f, *cdsd, gmted2010=gmtedd)
+
+        if self.target_dataset.dataset == 'chirps':
+            # Returns a list (split) of NumPy arrays
+            target_data = list(map(self.extract_chirps_data, splits, self.target_dstdirs))
+        
+        for split, td in zip(splits, target_data):
+            with open(self.root / f'{split}_y.npz', 'wb') as f:
+                np.savez(f, target=td)
 
     def get_subset(self, split: str) -> Self:
         if split == 'train':
