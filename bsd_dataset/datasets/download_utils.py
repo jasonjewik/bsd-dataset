@@ -1,7 +1,8 @@
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import threading
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import queue
 
 import wget
@@ -9,15 +10,125 @@ import cdsapi
 import numpy as np
 
 
-class CDSAPIRequest:
-    def __init__(self, dataset: str, options: Dict[str, str], output: Path):
-        if dataset == 'cmip5-single-levels':
-            self.dataset = 'projections-cmip5-daily-single-levels'
-        if dataset == 'cmip5-pressure-levels':
-            self.dataset = 'projections-cmip5-daily-pressure-levels'
-        self.options = options
-        self.output = output.expanduser().resolve()
+class DatasetRequest:
+    def __init__(self, dataset: str, **kwargs: Dict[str, Any]):
+        self.dataset = dataset
+        for kw, arg in kwargs.items():
+            setattr(self, kw, arg)
 
+    def __str__(self) -> str:
+        result = f'DatasetRequest({str(vars(self))})'
+        return result
+
+    def is_cds_req(self) -> bool:
+        return getattr(self, 'cds', False)
+
+@dataclass
+class CDSAPIRequest:
+    dataset: str
+    options: Dict[str, Any]
+    output: Path
+
+class CDSAPIRequestBuilder:
+    def build(self, root: str, dataset_request: DatasetRequest, train_dates: Tuple[str, str], val_dates: Tuple[str, str], test_dates: Tuple[str, str]) -> CDSAPIRequest:
+        dataset = dataset_request.dataset
+        try:
+            model = getattr(dataset_request, 'model')
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "model"')
+        try:
+            variable = getattr(dataset_request, 'variable')
+            assert len(variable) > 0
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing or has empty required parameter "variable"')
+        try:
+            ensemble_member = getattr(dataset_request, 'ensemble_member')
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
+        
+        output = root / 'cds' / f'{dataset}.{model}.tar.gz'
+        output = output.expanduser().resolve() 
+        periods = self.get_periods(model)
+
+        train_periods, success = select_periods(*train_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given train dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        train_periods = self.format_periods(train_periods)
+
+        val_periods, success = select_periods(*val_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given val dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        val_periods = self.format_periods(val_periods)
+
+        test_periods, success = select_periods(*test_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given test dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        test_periods = self.format_periods(test_periods)
+
+        periods = train_periods
+        periods.extend(val_periods)
+        periods.extend(test_periods)
+        periods = sorted(set(periods))
+        if len(periods) == 1:
+            periods = periods[0]
+
+        options = {}
+        options['experiment'] = 'historical'
+        options['format'] = 'tgz'
+        options['model'] = model
+        options['period'] = periods
+        options['variable'] = variable
+        options['ensemble_member'] = ensemble_member
+
+        result = CDSAPIRequest(dataset, options, output)
+        return result
+
+    def format_periods(self, periods: List[Tuple[str, str]]) -> List[str]:
+        result = []
+        for start, stop in periods:
+            start = ''.join(start.split('-'))
+            stop = ''.join(stop.split('-'))
+            result.append(start + '-' + stop)
+        return result
+
+    def get_periods(self, model: str) -> List[Tuple[str, str]]:
+        if model == 'ccsm4':
+            return [
+                ('1950-01-01', '1989-12-31'),
+                ('1990-01-01', '2005-12-31')
+            ]
+        if model == 'gfdl_cm3':
+            return [
+                ('1980-01-01', '1984-12-31'),
+                ('1985-01-01', '1989-12-31'),
+                ('1990-01-01', '1994-12-31'),
+                ('1995-01-01', '1999-12-31'),
+                ('2000-01-01', '2004-12-31'),
+                ('2005-01-01', '2005-12-31')
+            ]
+        if model == 'ipsl_cm5a_mr':
+            return [
+                ('1950-01-01', '1999-12-31'),
+                ('2000-01-01', '2005-13-31')
+            ]
+        if model == 'bnu_esm':
+            return [
+                ('1950-01-01', '2005-12-31')
+            ]
+        if model == 'hadcm3':
+            return [
+                ('1959-12-01', '1984-11-30'),
+                ('1984-12-01', '2005-12-30')
+            ]
 
 def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], bool]:
     if len(periods) == 0:

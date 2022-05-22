@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 import pytest
 
 from bsd_dataset import CDSAPICredentialHelper
+from bsd_dataset.datasets.download_utils import DatasetRequest, CDSAPIRequestBuilder
 
 
 @pytest.fixture(scope='function')
@@ -57,3 +59,37 @@ class TestWriting:
             CDSAPICredentialHelper(config_file).setup('', '')
         assert not os.path.isfile(config_file)
         
+
+class TestRequestBuilder:
+    
+    def test_request(self):
+        dataset = 'projections-cmip5-daily-single-levels'
+        model = 'gfdl_cm3'
+        root = Path('./data').expanduser().resolve()
+
+        expected_output = root / 'cds' / f'{dataset}.{model}.tar.gz'
+        expected_options = {
+            'ensemble_member': 'r1i1p1',
+            'format': 'tgz',
+            'experiment': 'historical',
+            'variable': ['mean_precipitation_flux'],
+            'model': 'gfdl_cm3',
+            'period': '19800101-19841231',
+        }
+
+        request = CDSAPIRequestBuilder().build(
+            root=root,
+            dataset_request=DatasetRequest(
+                dataset,
+                model=model,
+                ensemble_member='r1i1p1',
+                variable=['mean_precipitation_flux']
+            ),
+            train_dates=('1981-01-01', '1981-12-31'),
+            val_dates=('1982-01-01', '1982-12-31'),
+            test_dates=('1983-01-01', '1983-12-31')
+        )
+
+        assert request.dataset == dataset
+        assert request.output == expected_output
+        assert request.options == expected_options     
