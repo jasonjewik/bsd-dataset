@@ -38,7 +38,14 @@ class CDSAPIRequestBuilder:
             raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "model"')
         try:
             variable = getattr(dataset_request, 'variable')
-            assert len(variable) > 0
+            if type(variable) == list:
+                assert len(variable) > 0
+                if len(variable) == 1:
+                    variable = variable[0]
+            elif type(variable) == str:
+                pass
+            else:
+                raise ValueError(f'CDS request {str(dataset_request)} has a malformed "variable" argument')
         except:
             raise AttributeError(f'CDS request {str(dataset_request)} is missing or has empty required parameter "variable"')
         try:

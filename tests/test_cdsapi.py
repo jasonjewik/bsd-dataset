@@ -72,7 +72,7 @@ class TestRequestBuilder:
             'ensemble_member': 'r1i1p1',
             'format': 'tgz',
             'experiment': 'historical',
-            'variable': ['mean_precipitation_flux'],
+            'variable': 'mean_precipitation_flux',
             'model': 'gfdl_cm3',
             'period': '19800101-19841231',
         }
@@ -83,7 +83,7 @@ class TestRequestBuilder:
                 dataset,
                 model=model,
                 ensemble_member='r1i1p1',
-                variable=['mean_precipitation_flux']
+                variable='mean_precipitation_flux'
             ),
             train_dates=('1981-01-01', '1981-12-31'),
             val_dates=('1982-01-01', '1982-12-31'),
