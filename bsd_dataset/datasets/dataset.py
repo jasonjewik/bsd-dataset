@@ -1,6 +1,7 @@
 from pathlib import Path
+import os
 import tarfile
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 from typing_extensions import Self
 
 import numpy as np
@@ -10,12 +11,13 @@ import xarray as xr
 
 from bsd_dataset.regions import Region
 from bsd_dataset.datasets.download_utils import (
+    CDSAPIRequest,
+    DatasetRequest,
+    CDSAPIRequestBuilder,
     download_urls, 
-    multidownload_from_cds, 
-    CDSAPIRequest
+    multidownload_from_cds,     
 )
 from bsd_dataset.datasets.dataset_utils import (
-    irange, 
     get_shape_of_largest_array, 
     match_array_shapes, 
     lon180_to_lon360,
@@ -27,8 +29,8 @@ class BSDDataset(torch.utils.data.Dataset):
 
     def __init__(
         self, 
-        input_datasets: Dict[str, Dict[str, Union[str, List[str]]]],
-        target_dataset: str,
+        input_datasets: List[DatasetRequest],
+        target_dataset: DatasetRequest,
         train_region: Region,
         val_region: Region,
         test_region: Region,
@@ -37,205 +39,23 @@ class BSDDataset(torch.utils.data.Dataset):
         test_dates: Tuple[str, str],
         transform: Optional[torchvision.transforms.Compose],
         target_transform: Optional[torchvision.transforms.Compose],
-        download: bool,
-        extract: bool,
         root: Path
-    ) -> Self:
-        """
-        Parameters:
-            See get_dataset.py.
-        """
-        # Save parameters
+    ):
+        # Save arguments
+        self.input_datasets = input_datasets
+        self.target_dataset = target_dataset
+        self.train_region = train_region
+        self.val_region = val_region
+        self.test_region = test_region
+        self.train_dates = train_dates
+        self.val_dates = val_dates
+        self.test_dates = test_dates
         self.transform = transform
         self.target_transform = target_transform
         self.root = root
 
-        # Define spatial coverage
-        def get_lons_lats(region: Region) -> Tuple[np.array, np.array]:
-            lons, lats = [0, 0], [0, 0]
-            lons[0], lats[0] = region.top_left
-            lons[1], lats[1] = region.bottom_right
-            lons = np.array(lons)
-            lats = np.array(lats)
-            return lons, lats
-        train_lons, train_lats = get_lons_lats(train_region)
-        val_lons, val_lats = get_lons_lats(val_region)
-        test_lons, test_lats = get_lons_lats(test_region)
-        
-        # Build CDS API requests (used by both downloading and extracting)
-        cds_api_requests = {}
-        for ds, options in input_datasets.items():
-            if ds.startswith('cds'):
-                dataset, model = ds.split(':')[1:]
-                options['model'] = model
-                options['experiment'] = 'historical'
-                options['format'] = 'tgz'                    
-                output = root / 'cds' / f'{dataset}.{model}.tar.gz'
-                req = CDSAPIRequest(dataset, options, output)
-                cds_api_requests[ds] = req
-       
-        # Download data        
-        if download:
-
-            # Get CHIRPS and GMTED2010 data
-            urls, dsts = [], []
-            if target_dataset.startswith('chirps'):
-                train_years = [int(d.split('-')[0]) for d in train_dates]
-                val_years = [int(d.split('-')[0]) for d in val_dates]
-                test_years = [int(d.split('-')[0]) for d in test_dates]
-                res = target_dataset.split('_')[1]
-                chirps_urls = list(set(
-                    self._get_chirps_urls(res, train_years) +
-                    self._get_chirps_urls(res, val_years) +
-                    self._get_chirps_urls(res, test_years)))
-                chirps_dst = root / target_dataset
-                urls += chirps_urls
-                dsts += [chirps_dst] * len(chirps_urls)
-            for ds in input_datasets.keys():
-                if ds.startswith('gmted2010'):
-                    res = ds.split('_')[1]
-                    res = float(res[0] + '.' + res[1:])
-                    urls += self._get_gmted2010_urls(res)
-                    dsts.append(root / ds)
-            download_urls(urls, dsts, n_workers=5)
-
-            # Get CDS data
-            multidownload_from_cds(cds_api_requests, n_workers=5)
-        
-        # Extract data
-        if extract:
-
-            # Get CHIRPS data
-            if target_dataset.startswith('chirps'):
-                fnames = [root / 'train_y.npy', root / 'val_y.npy', root / 'test_y.npy']
-                all_dates = [train_dates, val_dates, test_dates]
-                all_lats = [train_lats, val_lats, test_lats]
-                all_lons = [train_lons, val_lons, test_lons]
-                src = root / target_dataset
-                iterzip = zip(fnames, all_dates, all_lats, all_lons)
-                for fname, dates, lats, lons in iterzip:
-                    npdata = self._extract_chirps_data(src, lons, lats, dates)
-                    with open(fname, 'wb') as f:
-                        np.save(f, npdata)
-
-            # Extract input
-            def extract_input_data(dst: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> None:
-                data = []
-                for ds in input_datasets.keys():                    
-                    if ds.startswith('cds'):
-                        src = cds_api_requests[ds].output
-                        npdata = self._extract_cds_data(src, lons, lats, dates)
-                        data.extend(npdata)
-                n_days = data[0].shape[0]
-                for ds in input_datasets.keys():
-                    if ds.startswith('gmted2010'):
-                        src = root / ds                   
-                        npdata = self._extract_gmted2010_data(src, lons, lats, n_days)
-                        data.append(npdata)
-                shape = get_shape_of_largest_array(data)
-                data = match_array_shapes(data, shape)
-                data = np.stack(data, axis=1)  # time x channel x lon x lat
-                with open(dst, 'wb') as f:
-                    np.save(f, data)
-
-            extract_input_data(root / 'train_x.npy', train_lons, train_lats, train_dates)
-            extract_input_data(root / 'val_x.npy', val_lons, val_lats, val_dates)
-            extract_input_data(root / 'test_x.npy', test_lons, test_lats, test_dates)
-
-
-    def _get_chirps_urls(self, res: str, years: Tuple[int, int]) -> List[str]:        
-        if years[0] < 1981 or years[1] > 2021:
-            raise ValueError('Requested CHIRPS data is out of range, must be in 1981-2021')
-        urls = [
-            'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/'
-            f'global_daily/netcdf/p{res}/chirps-v2.0.{year}.days_p{res}.nc'
-            for year in irange(*years)
-        ]
-        return urls
-
-    def _get_gmted2010_urls(self, res: float) -> List[str]:
-        """
-        Parameters:
-            res: The resolution to download.
-        """
-        available_resolutions = [0.0625, 0.125, 0.250, 0.500, 0.750, 1.000]
-        if res == 0.0625:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n015_00625deg.nc']
-        elif res == 0.125:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n030_0125deg.nc']
-        elif res == 0.250:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc']
-        elif res == 0.500:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc']
-        elif res == 0.750:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n180_0750deg.nc']
-        elif res == 1.000:
-            return ['https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n240_1000deg.nc']
-        else:
-            raise ValueError(f'Requested GMTED resolution is unavailable, must be in {available_resolutions}')
-            
-    def _extract_chirps_data(self, src: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> np.array:
-        """
-        Parameters:
-            src: The directory to read from.
-            lons: The longitudinal bounds.
-            lats: The latitudinal bounds.
-            dates: The temporal range of the data.
-        """
-        ds = xr.open_mfdataset(f'{src}/*.nc')
-        xdata = ds.precip.sel(
-            time=slice(*dates),
-            latitude=slice(*sorted(lats)), 
-            longitude=slice(*sorted(lons)))
-        # Drop leap days since CDS datasets don't have those
-        xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
-        npdata = xdata.values  # time x lat x lon
-        npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-        return npdata
-            
-    def _extract_gmted2010_data(self, src: Path, lons: np.array, lats: np.array, n_days: int) -> np.array:
-        """
-        Parameters:
-            src: The directory to read from.
-            lons: The longitudinal bounds.
-            lats: The latitudinal bounds.
-        """
-        ds = xr.open_mfdataset(f'{src}/*.nc')
-        xdata = ds.elevation.sel(
-            latitude=slice(*sorted(lats)), 
-            longitude=slice(*sorted(lons)))
-        npdata = xdata.values.T  # lon x lat 
-        npdata = np.expand_dims(npdata, 0)
-        npdata = np.repeat(npdata, n_days, axis=0)  # time x lon x lat   
-        return npdata
-
-    def _extract_cds_data(self, src: Path, lons: np.array, lats: np.array, dates: Tuple[str, str]) -> List[np.array]:
-        """
-        Parameters:
-            src: The tarfile to read from.
-            lons: The longitudinal bounds.
-            lats: The latitudinal bounds.
-            dates: The dates to cover.
-        """
-        tar = tarfile.open(src)
-        var_names = list(set([x.split('_')[0] for x in tar.getnames()]))
-        dir_name = '-'.join(str(src).split('.'))
-        dst = src.parent / dir_name
-        tar.extractall(path=dir_name)
-        tar.close()
-        
-        result = []
-        lons = lon180_to_lon360(lons)
-        for vn in var_names:
-            ds = xr.open_mfdataset(f'{dir_name}/{vn}*.nc')
-            xdata = getattr(ds, vn).sel(
-                time=slice(*dates),
-                lat=slice(*sorted(lats)),
-                lon=get_lon_mask(ds.lon, lons))  # JUST FOR DEMO EDGE CASE!!
-            npdata = xdata.values  # time x lat x lon
-            npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-            result.append(npdata)        
-        return result
+        # Build parameters
+        self.built_download_requests = False
 
     def __len__(self) -> int:
         return self.X.shape[0]
@@ -250,23 +70,225 @@ class BSDDataset(torch.utils.data.Dataset):
         mask = np.isnan(y)
         return x, y, mask
 
+    def build_download_requests(self) -> None:
+        cds_api_requests = []
+        builder = CDSAPIRequestBuilder()
+        input_urls, input_dstdirs = [], []
+        for ds_req in self.input_datasets:
+            if ds_req.is_cds_req():
+                cds_api_req = builder.build(
+                    self.root,
+                    ds_req, 
+                    self.train_dates, 
+                    self.val_dates, 
+                    self.test_dates
+                )
+                cds_api_requests.append(cds_api_req)
+            if ds_req.dataset == 'gmted2010':
+                input_urls.append(self.get_gmted2010_url(ds_req))
+                input_dstdirs.append(self.root / 'gmted2010')       
+    
+        target_urls, target_dstdirs = [], []
+        if self.target_dataset.dataset == 'chirps':
+            chirps_urls = self.get_chirps_urls(self.target_dataset)            
+            chirps_dstdirs = [self.root / 'chirps'] * len(chirps_urls)
+            target_urls.extend(chirps_urls)
+            target_dstdirs.extend(chirps_dstdirs)
+                
+        self.cds_api_requests = cds_api_requests
+        self.input_urls = input_urls
+        self.input_dstdirs = input_dstdirs
+        self.target_urls = target_urls
+        self.target_dstdirs = target_dstdirs
+        self.built_download_requests = True
+       
+    def download(self):
+        if not self.built_download_requests:
+            print('ERROR: download requests not yet built')
+            return
+        print(
+            '========================= WARNING =========================\n'
+            'If requesting a lot of data (several GB) from CDS, CDS may\n'
+            'take a long while to prepare the data for you. You can\n'
+            'check on the status of your request at this link:\n'
+            'https://cds.climate.copernicus.eu/cdsapp#!/yourrequests.\n'
+            '==========================================================='
+        )
+        download_urls(
+            self.input_urls + self.target_urls, 
+            self.input_dstdirs + self.target_dstdirs,
+            n_workers=5
+        )
+        multidownload_from_cds(self.cds_api_requests, n_workers=5)
+        
+    def extract(self):
+        if not self.built_download_requests:
+            print('ERROR: download requests not yet built')
+            return
+
+        splits = ['train', 'val', 'test']
+        cds_direcs = self.extract_cds_targz(self.cds_api_requests)
+
+        # Returns a list (split) of lists (data source) of Numpy arrays
+        cds_data = list(map(self.extract_cds_data, splits, [cds_direcs] * len(splits)))
+
+        # Returns a list (split) of NumPy arrays
+        gmted2010_data = list(map(
+            self.extract_gmted2010_data, 
+            splits, 
+            [self.root / 'gmted2010'] * len(splits)
+        ))
+
+        # Save separately to save room on disk, scaling and concatenation can happen later
+        for split, cdsd, gmtedd in zip(splits, cds_data, gmted2010_data):
+            with open(self.root / f'{split}_x.npz', 'wb') as f:
+                np.savez(f, *cdsd, gmted2010=gmtedd)
+
+        if self.target_dataset.dataset == 'chirps':
+            # Returns a list (split) of NumPy arrays
+            target_data = list(map(self.extract_chirps_data, splits, self.target_dstdirs))
+        
+        for split, td in zip(splits, target_data):
+            with open(self.root / f'{split}_y.npz', 'wb') as f:
+                np.savez(f, target=td)
+
     def get_subset(self, split: str) -> Self:
-        """
-        Loads the training, validation, or test data.
-        Parameters:
-            - split: train, val, or test
-        """
-        def load_XY(Xfile, Yfile):
-            with open(self.root / Xfile, 'rb') as f:
-                self.X = np.load(f)
-            with open(self.root / Yfile, 'rb') as f:
-                self.Y = np.load(f)
         if split == 'train':
-            load_XY('train_x.npy', 'train_y.npy')
+            self.load_XY('train_x.npz', 'train_y.npz')
         elif split == 'val':
-            load_XY('val_x.npy', 'val_y.npy')
+            self.load_XY('val_x.npz', 'val_y.npz')
         elif split == 'test':
-            load_XY('test_x.npy', 'test_y.npy')
+            self.load_XY('test_x.npz', 'test_y.npz')
         else:
             print(f'Split {split} not recognized')
         return self
+
+    def load_XY(self, Xfile, Yfile):
+        with open(self.root / Xfile, 'rb') as f:
+            npzfile = np.load(f)
+            arrs = [npzfile[key] for key in npzfile.files if key != 'gmted2010']
+            shape = get_shape_of_largest_array(arrs)
+            xdata = match_array_shapes(arrs, shape)
+            if 'gmted2010' in npzfile.files:
+                n_days = xdata.shape[0]
+                gmted2010 = npzfile['gmted2010']
+                gmted2010 = np.expand_dims(gmted2010, 0)
+                gmted2010 = np.repeat(gmted2010, n_days, axis=0)
+                xdata = np.concatenate(xdata, gmted2010)
+            self.X = xdata
+        with open(self.root / Yfile, 'rb') as f:
+            npzfile = np.load(f)
+            self.Y = npzfile['target']
+
+    def get_lons_lats(self, region: Region) -> Tuple[np.array, np.array]:
+        lons, lats = [0, 0], [0, 0]
+        lons[0], lats[0] = region.top_left
+        lons[1], lats[1] = region.bottom_right
+        lons = np.array(lons)
+        lats = np.array(lats)
+        return lons, lats
+
+    def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
+        resolutions = [0.0625, 0.125, 0.25, 0.5, 0.75, 1]
+        res = getattr(ds_req, 'resolution', None)
+        if res not in resolutions:
+            raise AttributeError(
+                'gmted2010 dataset has invalid resolution\n'
+                f'available resolutions are {resolutions}'
+            )
+        if res == 0.0625:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n015_00625deg.nc'
+        elif res == 0.125:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n030_0125deg.nc'
+        elif res == 0.25:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
+        elif res == 0.5:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
+        elif res == 0.75:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n180_0750deg.nc'
+        elif res == 1:
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n240_1000deg.nc'
+        return url
+
+    def get_chirps_urls(self, ds_req: DatasetRequest) -> List[str]:
+        resolutions = {0.05: '05', 0.25: '25'}
+        res = getattr(ds_req, 'resolution', None)
+        str_res = resolutions.get(res, None)
+        if str_res is None:
+            raise AttributeError(
+                'chirps dataset has invalid resolution,'
+                f' available resolutions are {resolutions}'
+            )
+        
+        train_years = [int(d.split('-')[0]) for d in self.train_dates]
+        val_years = [int(d.split('-')[0]) for d in self.val_dates]
+        test_years = [int(d.split('-')[0]) for d in self.test_dates]
+        urls = []
+        
+        for a, b in [train_years, val_years, test_years]:
+            if not (a in range(1981, 2022) and b in range(1981, 2022)):
+                raise ValueError(
+                    f'requested dates ({a}, {b}) are out of range for CHIRPS,'
+                    ' which must be in 1981-2021'
+                )
+            urls.extend([
+                'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/'
+                f'global_daily/netcdf/p{str_res}/chirps-v2.0.{year}.days_p{str_res}.nc'
+                for year in range(a, b+1)
+            ])
+        
+        return urls
+
+    def extract_cds_targz(self, cds_api_requests: List[CDSAPIRequest]) -> List[str]:
+        direcs = []
+        for req in cds_api_requests:
+            src = req.output
+            with tarfile.open(src) as tar:
+                dir_name = src.name.split('.')[0]
+                direcs.append(dir_name)
+                tar.extractall(path=dir_name)
+        return direcs
+
+    def extract_cds_data(self, split: str, src_dir: Path) -> np.array:
+        region = getattr(self, f'self.{split}_region')
+        dates = getattr(self, f'self.{split}_dates')
+        lons, lats = self.get_lons_lats(region)
+        lons = lon180_to_lon360(lons)
+        var_names = os.listdir(src_dir)
+        result = []
+        for vn in var_names:
+            ds = xr.open_mfdataset(f'{src_dir}/{vn}*.nc')
+            xdata = getattr(ds, vn).sel(
+                time=slice(*dates),
+                lat=slice(*sorted(lats)),
+                lon=get_lon_mask(ds.lon, lons))  # JUST FOR DEMO EDGE CASE!!
+            npdata = xdata.values  # time x lat x lon
+            npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
+            result.append(npdata)
+        result = np.stack(result, axis=1)  # time x variable x lon x lat
+        return result
+
+    def extract_gmted2010_data(self, split: str, src: Path) -> np.array:
+        region = getattr(self, f'self.{split}_region')
+        lons, lats = self.get_lons_lats(region)
+        ds = xr.open_mfdataset(f'{src}/*.nc')
+        xdata = ds.elevation.sel(
+            latitude=slice(*sorted(lats)), 
+            longitude=slice(*sorted(lons)))
+        npdata = xdata.values.T  # lon x lat
+        return npdata
+            
+    def extract_chirps_data(self, split: str, src: Path) -> np.array:
+        dates = getattr(self, f'{split}_dates')
+        region = getattr(self, f'{split}_region')
+        lons, lats = self.get_lons_lats(region)
+        ds = xr.open_mfdataset(f'{src}/*.nc')
+        xdata = ds.precip.sel(
+            time=slice(*dates),
+            latitude=slice(*sorted(lats)), 
+            longitude=slice(*sorted(lons)))
+        # Drop leap days since CDS datasets don't have those
+        xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
+        npdata = xdata.values  # time x lat x lon
+        npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
+        return npdata

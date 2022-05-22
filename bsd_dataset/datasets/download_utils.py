@@ -1,23 +1,176 @@
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import threading
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import queue
 
 import wget
 import cdsapi
-import numpy as np
+import numpy as np      
 
+class DatasetRequest:
+    def __init__(self, dataset: str, **kwargs: Dict[str, Any]):
+        self.dataset = dataset
+        for kw, arg in kwargs.items():
+            setattr(self, kw, arg)
 
+    def __str__(self) -> str:
+        result = f'DatasetRequest({str(vars(self))})'
+        return result
+
+    def is_cds_req(self) -> bool:
+        cds_datasets = ['projections-cmip5-daily-single-levels']
+        return self.dataset in cds_datasets
+
+@dataclass
 class CDSAPIRequest:
-    def __init__(self, dataset: str, options: Dict[str, str], output: Path):
-        if dataset == 'cmip5-single-levels':
-            self.dataset = 'projections-cmip5-daily-single-levels'
-        if dataset == 'cmip5-pressure-levels':
-            self.dataset = 'projections-cmip5-daily-pressure-levels'
-        self.options = options
-        self.output = output.expanduser().resolve()
+    dataset: str
+    options: Dict[str, Any]
+    output: Path
 
+class CDSAPIRequestBuilder:
+    def build(self, root: str, dataset_request: DatasetRequest, train_dates: Tuple[str, str], val_dates: Tuple[str, str], test_dates: Tuple[str, str]) -> CDSAPIRequest:
+        dataset = dataset_request.dataset
+        try:
+            model = getattr(dataset_request, 'model')
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "model"')
+        try:
+            variable = getattr(dataset_request, 'variable')
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "variable"')
+        if type(variable) == list:
+            if len(variable) == 0:
+                raise ValueError(f'CDS request {str(dataset_request)} has empty required parameter "variable')            
+            for var in variable:
+                if var not in self.get_variables(model):
+                    raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {var}')
+            if len(variable) == 1:
+                variable = variable[0]
+        elif type(variable) == str:
+            if variable not in self.get_variables(model):
+                raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {variable}')
+        else:
+            raise TypeError(f'CDS request {str(dataset_request)} "variable" parameter must be str or list type')
+        try:
+            ensemble_member = getattr(dataset_request, 'ensemble_member')
+        except:
+            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
+        
+        output = root / 'cds' / dataset / f'{model}.tar.gz'
+        output = output.expanduser().resolve() 
+        periods = self.get_periods(model)
+
+        train_periods, success = select_periods(*train_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given train dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        train_periods = self.format_periods(train_periods)
+
+        val_periods, success = select_periods(*val_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given val dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        val_periods = self.format_periods(val_periods)
+
+        test_periods, success = select_periods(*test_dates, periods)
+        if not success:
+            raise ValueError(
+                f'the given test dates are not available for dataset {dataset} and model {model}\n'
+                f'available dates are: {self.get_periods(model)}'
+            )
+        test_periods = self.format_periods(test_periods)
+
+        periods = train_periods
+        periods.extend(val_periods)
+        periods.extend(test_periods)
+        periods = sorted(set(periods))
+        if len(periods) == 1:
+            periods = periods[0]
+
+        options = {}
+        options['experiment'] = 'historical'
+        options['format'] = 'tgz'
+        options['model'] = model
+        options['period'] = periods
+        options['variable'] = variable
+        options['ensemble_member'] = ensemble_member
+
+        result = CDSAPIRequest(dataset, options, output)
+        return result
+
+    def format_periods(self, periods: List[Tuple[str, str]]) -> List[str]:
+        result = []
+        for start, stop in periods:
+            start = ''.join(start.split('-'))
+            stop = ''.join(stop.split('-'))
+            result.append(start + '-' + stop)
+        return result
+
+    def get_periods(self, model: str) -> List[Tuple[str, str]]:
+        if model == 'ccsm4':
+            return [
+                ('1950-01-01', '1989-12-31'),
+                ('1990-01-01', '2005-12-31')
+            ]
+        if model == 'gfdl_cm3':
+            return [
+                ('1980-01-01', '1984-12-31'),
+                ('1985-01-01', '1989-12-31'),
+                ('1990-01-01', '1994-12-31'),
+                ('1995-01-01', '1999-12-31'),
+                ('2000-01-01', '2004-12-31'),
+                ('2005-01-01', '2005-12-31')
+            ]
+        if model == 'ipsl_cm5a_mr':
+            return [
+                ('1950-01-01', '1999-12-31'),
+                ('2000-01-01', '2005-13-31')
+            ]
+        if model == 'bnu_esm':
+            return [
+                ('1950-01-01', '2005-12-31')
+            ]
+        if model == 'hadcm3':
+            return [
+                ('1959-12-01', '1984-11-30'),
+                ('1984-12-01', '2005-12-30')
+            ]
+
+    def get_variables(self, model: str) -> List[str]:
+        all_vars = [
+            'snowfall',
+            '10m_wind_speed',
+            '2m_temperature',
+            'mean_precipitation_flux', 
+            'mean_sea_level_pressure',
+            'near_surface_specific_humidity',
+            'surface_solar_radiation_downwards',
+            'daily_near_surface_relative_humidity',
+            'maximum_2m_temperature_in_the_last_24_hours',
+            'minimum_2m_temperature_in_the_last_24_hours'            
+        ]
+
+        if model == 'ccsm4':
+            all_vars.remove('10m_wind_speed')
+            all_vars.remove('daily_near_surface_relative_humidity')
+            return all_vars
+        if model == 'gfdl_cm3':
+            return all_vars
+        if model == 'ipsl_cm5a_mr':
+            return all_vars
+        if model == 'bnu_esm':
+            return all_vars
+        if model == 'hadcm3':
+            all_vars.remove('snowfall')
+            all_vars.remove('surface_solar_radiation_downwards')
+            all_vars.remove('daily_near_surface_relative_humidity')
+            return all_vars
 
 def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], bool]:
     if len(periods) == 0:
@@ -60,10 +213,12 @@ def download_url(url: str, dst: Path) -> None:
     dst = dst.expanduser().resolve()
     fname = os.path.basename(url)
     fpath = dst / fname
-    dst.mkdir(exist_ok=True)
-    fpath.unlink(missing_ok=True)
+    if fpath.is_file():
+        print(f'File {fpath} already exists')
+        return 
+    dst.mkdir(parents=True, exist_ok=True)
     try:
-        wget.download(url, out=str(fpath))
+        wget.download(url, out=str(fpath), bar=None)
     except Exception as e:
         print(e)
         print(f'could not download {url}')
@@ -94,6 +249,7 @@ def download_urls(urls: List[str], dsts: List[Path], n_workers: int = 1) -> None
             threading.Thread(target=worker, daemon=True).start()
         for url, dst in zip(urls, dsts):
             q.put((url, dst))
+            print(f'Downloading {url} to {dst}')
         q.join()
 
 def download_from_cds(request: CDSAPIRequest) -> None:
@@ -104,12 +260,14 @@ def download_from_cds(request: CDSAPIRequest) -> None:
         request: A request to pass to the CDS API's retrieve method.
     """
     dst = request.output
+    if dst.is_dir():
+        print(f'Directory {dst} already exists')
+        return
     os.makedirs(dst.parent, exist_ok=True)
-    dst.unlink(missing_ok=True)
     c = cdsapi.Client()
     c.retrieve(request.dataset, request.options, request.output)
 
-def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 1) -> None:
+def multidownload_from_cds(requests: List[CDSAPIRequest], n_workers: int = 1) -> None:
     """
     Downloads from CDS according to the passed in requests.
 
@@ -129,6 +287,7 @@ def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 
                 q.task_done()
         for _ in range(n_workers):
             threading.Thread(target=worker, daemon=True).start()
-        for req in requests.values():
+        for req in requests:
             q.put(req)
+            print(f'Downloading {req}')
         q.join()
