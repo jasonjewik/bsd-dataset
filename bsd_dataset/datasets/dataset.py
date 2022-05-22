@@ -107,10 +107,12 @@ class BSDDataset(torch.utils.data.Dataset):
             print('ERROR: download requests not yet built')
             return
         print(
-            'WARNING: If requesting a lot of data (several GB) from CDS,\n'
-            'CDS may take a long while to prepare the data for you.\n'
-            'You can check on the status of your request at this link:'
-            ' https://cds.climate.copernicus.eu/cdsapp#!/yourrequests.'
+            '========================= WARNING =========================\n'
+            'If requesting a lot of data (several GB) from CDS, CDS may\n'
+            'take a long while to prepare the data for you. You can\n'
+            'check on the status of your request at this link:\n'
+            'https://cds.climate.copernicus.eu/cdsapp#!/yourrequests.\n'
+            '==========================================================='
         )
         download_urls(
             self.input_urls + self.target_urls, 
@@ -187,7 +189,7 @@ class BSDDataset(torch.utils.data.Dataset):
         return lons, lats
 
     def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
-        resolutions = [0.0625, 0.125, 0.250, 0.500, 0.750, 1.000]
+        resolutions = [0.0625, 0.125, 0.25, 0.5, 0.75, 1]
         res = getattr(ds_req, 'resolution', None)
         if res not in resolutions:
             raise AttributeError(
@@ -198,20 +200,21 @@ class BSDDataset(torch.utils.data.Dataset):
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n015_00625deg.nc'
         elif res == 0.125:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n030_0125deg.nc'
-        elif res == 0.250:
+        elif res == 0.25:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
-        elif res == 0.500:
+        elif res == 0.5:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
-        elif res == 0.750:
+        elif res == 0.75:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n180_0750deg.nc'
-        elif res == 1.000:
+        elif res == 1:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n240_1000deg.nc'
         return url
 
     def get_chirps_urls(self, ds_req: DatasetRequest) -> List[str]:
-        resolutions = [0.05, 0.25]
-        res = getattr(ds_req, 'resolution', None)        
-        if res not in resolutions:
+        resolutions = {0.05: '05', 0.25: '25'}
+        res = getattr(ds_req, 'resolution', None)
+        str_res = resolutions.get(res, None)
+        if str_res is None:
             raise AttributeError(
                 'chirps dataset has invalid resolution,'
                 f' available resolutions are {resolutions}'
@@ -230,7 +233,7 @@ class BSDDataset(torch.utils.data.Dataset):
                 )
             urls.extend([
                 'ftp://anonymous@ftp.chc.ucsb.edu/pub/org/chg/products/CHIRPS-2.0/'
-                f'global_daily/netcdf/p{res}/chirps-v2.0.{year}.days_p{res}.nc'
+                f'global_daily/netcdf/p{str_res}/chirps-v2.0.{year}.days_p{str_res}.nc'
                 for year in range(a, b+1)
             ])
         

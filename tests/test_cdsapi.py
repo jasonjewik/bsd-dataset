@@ -69,7 +69,7 @@ def builder_fixture():
             self.root = Path('./data').expanduser().resolve()    
             self.dataset = 'projections-cmip5-daily-single-levels'
             self.model = 'gfdl_cm3'
-            self.expected_output = self.root / 'cds' / f'{self.dataset}.{self.model}.tar.gz'
+            self.expected_output = self.root / 'cds' / self.dataset / f'{self.model}.tar.gz'
             self.builder_kwargs = {
                 'root': self.root,
                 'train_dates': ('1981-01-01', '1981-12-31'),

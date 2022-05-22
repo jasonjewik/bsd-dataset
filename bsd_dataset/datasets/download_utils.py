@@ -1,26 +1,13 @@
-from contextlib import contextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import sys
 import threading
 from typing import Any, Dict, List, Tuple
 import queue
 
 import wget
 import cdsapi
-import numpy as np
-
-
-@contextmanager
-def suppress_stdout():
-    with open(os.devnull, 'w') as devnull:
-        old_stdout = sys.stdout
-        sys.stdout = devnull
-        try:
-            yield
-        finally:
-            sys.stdout = old_stdout         
+import numpy as np      
 
 class DatasetRequest:
     def __init__(self, dataset: str, **kwargs: Dict[str, Any]):
@@ -71,7 +58,7 @@ class CDSAPIRequestBuilder:
         except:
             raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
         
-        output = root / 'cds' / f'{dataset}.{model}.tar.gz'
+        output = root / 'cds' / dataset / f'{model}.tar.gz'
         output = output.expanduser().resolve() 
         periods = self.get_periods(model)
 
@@ -226,8 +213,10 @@ def download_url(url: str, dst: Path) -> None:
     dst = dst.expanduser().resolve()
     fname = os.path.basename(url)
     fpath = dst / fname
-    dst.mkdir(exist_ok=True)
-    fpath.unlink(missing_ok=True)
+    if fpath.is_file():
+        print(f'File {fpath} already exists')
+        return 
+    dst.mkdir(parents=True, exist_ok=True)
     try:
         wget.download(url, out=str(fpath), bar=None)
     except Exception as e:
@@ -260,6 +249,7 @@ def download_urls(urls: List[str], dsts: List[Path], n_workers: int = 1) -> None
             threading.Thread(target=worker, daemon=True).start()
         for url, dst in zip(urls, dsts):
             q.put((url, dst))
+            print(f'Downloading {url} to {dst}')
         q.join()
 
 def download_from_cds(request: CDSAPIRequest) -> None:
@@ -270,13 +260,14 @@ def download_from_cds(request: CDSAPIRequest) -> None:
         request: A request to pass to the CDS API's retrieve method.
     """
     dst = request.output
+    if dst.is_dir():
+        print(f'Directory {dst} already exists')
+        return
     os.makedirs(dst.parent, exist_ok=True)
-    dst.unlink(missing_ok=True)
-    with suppress_stdout():
-        c = cdsapi.Client()
-        c.retrieve(request.dataset, request.options, request.output)
+    c = cdsapi.Client()
+    c.retrieve(request.dataset, request.options, request.output)
 
-def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 1) -> None:
+def multidownload_from_cds(requests: List[CDSAPIRequest], n_workers: int = 1) -> None:
     """
     Downloads from CDS according to the passed in requests.
 
@@ -296,6 +287,7 @@ def multidownload_from_cds(requests: Dict[str, CDSAPIRequest], n_workers: int = 
                 q.task_done()
         for _ in range(n_workers):
             threading.Thread(target=worker, daemon=True).start()
-        for req in requests.values():
+        for req in requests:
             q.put(req)
+            print(f'Downloading {req}')
         q.join()
