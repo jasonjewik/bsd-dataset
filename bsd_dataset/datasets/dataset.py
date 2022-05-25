@@ -8,7 +8,6 @@ from typing_extensions import Self
 
 import numpy as np
 import torch
-import torchvision.transforms
 import xarray as xr
 
 from bsd_dataset.regions import Region
@@ -23,38 +22,19 @@ from bsd_dataset.datasets.dataset_utils import (
     match_array_shapes,
 )
 
-
-class BSDDataset(torch.utils.data.Dataset):
+class BSDD(torch.utils.data.Dataset):
 
     def __init__(
-        self, 
-        input_datasets: List[DatasetRequest],
-        target_dataset: DatasetRequest,
-        train_region: Region,
-        val_region: Region,
-        test_region: Region,
-        train_dates: Tuple[str, str],
-        val_dates: Tuple[str, str],
-        test_dates: Tuple[str, str],
-        transform: Optional[torchvision.transforms.Compose],
-        target_transform: Optional[torchvision.transforms.Compose],
-        root: Path
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        transform: Optional[torch.nn.Module],
+        target_transform: Optional[torch.nn.Module],
     ):
-        # Save arguments
-        self.input_datasets = input_datasets
-        self.target_dataset = target_dataset
-        self.train_region = train_region
-        self.val_region = val_region
-        self.test_region = test_region
-        self.train_dates = train_dates
-        self.val_dates = val_dates
-        self.test_dates = test_dates
+        self.X = X
+        self.Y = Y
         self.transform = transform
         self.target_transform = target_transform
-        self.root = root
-
-        # Build parameters
-        self.built_download_requests = False
 
     def __len__(self) -> int:
         return self.X.shape[0]
@@ -69,7 +49,35 @@ class BSDDataset(torch.utils.data.Dataset):
         mask = np.isnan(y)
         return x, y, mask
 
-    def build_download_requests(self) -> None:
+class BSDDBuilder:
+
+    def __init__(
+        self, 
+        input_datasets: List[DatasetRequest],
+        target_dataset: DatasetRequest,
+        train_region: Region,
+        val_region: Region,
+        test_region: Region,
+        train_dates: Tuple[str, str],
+        val_dates: Tuple[str, str],
+        test_dates: Tuple[str, str],
+        root: Path
+    ):
+        # Save arguments
+        self.input_datasets = input_datasets
+        self.target_dataset = target_dataset
+        self.train_region = train_region
+        self.val_region = val_region
+        self.test_region = test_region
+        self.train_dates = train_dates
+        self.val_dates = val_dates
+        self.test_dates = test_dates
+        self.root = root
+
+        # Build parameters
+        self.built_download_requests = False
+
+    def prepare_download_requests(self) -> Self:
         cds_api_requests, cds_dstdirs = [], []
         builder = CDSAPIRequestBuilder()
         input_urls, input_dstdirs = [], []
@@ -103,8 +111,10 @@ class BSDDataset(torch.utils.data.Dataset):
         self.target_urls = target_urls
         self.target_dstdirs = target_dstdirs
         self.built_download_requests = True
+
+        return self
        
-    def download(self):
+    def download(self) -> Self:
         if not self.built_download_requests:
             print('ERROR: download requests not yet built')
             return
@@ -123,8 +133,9 @@ class BSDDataset(torch.utils.data.Dataset):
         )
         multidownload_from_cds(self.cds_api_requests, n_workers=5)
         self.extract_cds_targz()
+        return self
         
-    def extract(self):
+    def extract(self) -> Self:
         if not self.built_download_requests:
             print('ERROR: download requests not yet built')
             return
@@ -135,7 +146,9 @@ class BSDDataset(torch.utils.data.Dataset):
         cds_data = defaultdict(dict)
         for spl, direc in product(splits, self.cds_dstdirs):
             data_src = direc.name
-            cds_data[spl][data_src] = self.extract_cds_data(spl, direc)
+            this_data = self.extract_cds_data(spl, direc)
+            for var_name, data in this_data:
+                cds_data[spl][f'{data_src}:{var_name}'] = data
         # TODO @jasonjewik: include auxiliary information like latitude, longitude, and date
 
         # Get the GMTED2010 data
@@ -160,33 +173,34 @@ class BSDDataset(torch.utils.data.Dataset):
             with open(self.root / f'{spl}_y.npz', 'wb') as f:
                 np.savez(f, target=target_data[spl])
 
-    def get_subset(self, split: str) -> Self:
-        if split == 'train':
-            self.load_XY('train_x.npz', 'train_y.npz')
-        elif split == 'val':
-            self.load_XY('val_x.npz', 'val_y.npz')
-        elif split == 'test':
-            self.load_XY('test_x.npz', 'test_y.npz')
-        else:
-            print(f'Split {split} not recognized')
         return self
 
-    def load_XY(self, Xfile, Yfile):
+    def get_split(self, split: str, transform: Optional[torch.nn.Module] = None, target_transform: Optional[torch.nn.Module] = None) -> BSDD:
+        splits = ['train', 'val', 'test']
+        if split not in splits:
+            raise ValueError(f'Split {split} not recognized\nMust be of {splits}')
+        X, Y = self.load_XY(f'{split}_x.npz', f'{split}_y.npz')
+        dataset = BSDD(X, Y, transform, target_transform)
+        return dataset
+
+    def load_XY(self, Xfile, Yfile) -> Tuple[np.ndarray, np.ndarray]:
         with open(self.root / Xfile, 'rb') as f:
             npzfile = np.load(f)
             arrs = [npzfile[key] for key in npzfile.files if key != 'gmted2010']
-            shape = get_shape_of_largest_array(arrs)
-            xdata = match_array_shapes(arrs, shape)
             if 'gmted2010' in npzfile.files:
-                n_days = xdata.shape[0]
+                # TODO @jasonjewik: verify each array in the file has the same number of days
+                n_days = arrs[0].shape[0]
                 gmted2010 = npzfile['gmted2010']
                 gmted2010 = np.expand_dims(gmted2010, 0)
                 gmted2010 = np.repeat(gmted2010, n_days, axis=0)
-                xdata = np.concatenate(xdata, gmted2010)
-            self.X = xdata
+                arrs.append(gmted2010)
+            shape = get_shape_of_largest_array(arrs)
+            new_arrs = match_array_shapes(arrs, shape)
+            X = np.stack(new_arrs, axis=1)  # days x channel x lon x lat
         with open(self.root / Yfile, 'rb') as f:
             npzfile = np.load(f)
-            self.Y = npzfile['target']
+            Y = npzfile['target']
+        return (X, Y)
 
     def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
         resolutions = [0.0625, 0.125, 0.25, 0.5, 0.75, 1]
@@ -246,7 +260,7 @@ class BSDDataset(torch.utils.data.Dataset):
                 dir_path = src.parent / src.name.split('.')[1]
                 tar.extractall(path=dir_path)
 
-    def extract_cds_data(self, split: str, src_dir: Path) -> np.array:
+    def extract_cds_data(self, split: str, src_dir: Path) -> List[Tuple[str, np.ndarray]]:
         region = getattr(self, f'{split}_region')
         dates = getattr(self, f'{split}_dates')
         lons = region.get_longitudes(360)
@@ -261,11 +275,10 @@ class BSDDataset(torch.utils.data.Dataset):
                 lon=slice(*lons))  # TODO @jasonjewik: investigate
             npdata = xdata.values  # time x lat x lon
             npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-            result.append(npdata)
-        result = np.stack(result, axis=1)  # time x variable x lon x lat
+            result.append((vn, npdata))
         return result
 
-    def extract_gmted2010_data(self, split: str, src: Path) -> np.array:
+    def extract_gmted2010_data(self, split: str, src: Path) -> np.ndarray:
         region = getattr(self, f'{split}_region')
         lons = region.get_longitudes(180)
         lats = region.get_latitudes()
@@ -276,7 +289,7 @@ class BSDDataset(torch.utils.data.Dataset):
         npdata = xdata.values.T  # lon x lat
         return npdata
             
-    def extract_chirps_data(self, split: str, src: Path) -> np.array:
+    def extract_chirps_data(self, split: str, src: Path) -> np.ndarray:
         dates = getattr(self, f'{split}_dates')
         region = getattr(self, f'{split}_region')
         lons = region.get_longitudes(180)
