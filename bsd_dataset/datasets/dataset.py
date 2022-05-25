@@ -1,3 +1,5 @@
+from collections import defaultdict
+from itertools import product
 from pathlib import Path
 import os
 import tarfile
@@ -19,8 +21,7 @@ from bsd_dataset.datasets.download_utils import (
 )
 from bsd_dataset.datasets.dataset_utils import (
     get_shape_of_largest_array, 
-    match_array_shapes, 
-    lon180_to_lon360,
+    match_array_shapes,
     get_lon_mask
 )
 
@@ -71,31 +72,34 @@ class BSDDataset(torch.utils.data.Dataset):
         return x, y, mask
 
     def build_download_requests(self) -> None:
-        cds_api_requests = []
+        cds_api_requests, cds_dstdirs = [], []
         builder = CDSAPIRequestBuilder()
         input_urls, input_dstdirs = [], []
         for ds_req in self.input_datasets:
             if ds_req.is_cds_req():
-                cds_api_req = builder.build(
+                cds_api_reqs = builder.build(
                     self.root,
                     ds_req, 
                     self.train_dates, 
                     self.val_dates, 
                     self.test_dates
                 )
-                cds_api_requests.append(cds_api_req)
+                for car in cds_api_reqs:
+                    direc = car.output.parent / car.output.name.split('.')[1]
+                    cds_dstdirs.append(direc)
+                cds_api_requests.extend(cds_api_reqs)
             if ds_req.dataset == 'gmted2010':
                 input_urls.append(self.get_gmted2010_url(ds_req))
                 input_dstdirs.append(self.root / 'gmted2010')       
     
         target_urls, target_dstdirs = [], []
         if self.target_dataset.dataset == 'chirps':
-            chirps_urls = self.get_chirps_urls(self.target_dataset)            
-            chirps_dstdirs = [self.root / 'chirps'] * len(chirps_urls)
+            chirps_urls = self.get_chirps_urls(self.target_dataset)
             target_urls.extend(chirps_urls)
-            target_dstdirs.extend(chirps_dstdirs)
+            target_dstdirs = [self.root / 'chirps'] * len(chirps_urls)
                 
         self.cds_api_requests = cds_api_requests
+        self.cds_dstdirs = list(set(cds_dstdirs))
         self.input_urls = input_urls
         self.input_dstdirs = input_dstdirs
         self.target_urls = target_urls
@@ -120,37 +124,43 @@ class BSDDataset(torch.utils.data.Dataset):
             n_workers=5
         )
         multidownload_from_cds(self.cds_api_requests, n_workers=5)
+        self.extract_cds_targz()
         
     def extract(self):
         if not self.built_download_requests:
             print('ERROR: download requests not yet built')
             return
-
+        
         splits = ['train', 'val', 'test']
-        cds_direcs = self.extract_cds_targz(self.cds_api_requests)
 
-        # Returns a list (split) of lists (data source) of Numpy arrays
-        cds_data = list(map(self.extract_cds_data, splits, [cds_direcs] * len(splits)))
+        # Get the CDS data        
+        cds_data = defaultdict(dict)
+        for spl, direc in product(splits, self.cds_dstdirs):
+            data_src = direc.name
+            cds_data[spl][data_src] = self.extract_cds_data(spl, direc)
+        # TODO @jasonjewik: include auxiliary information like latitude, longitude, and date
 
-        # Returns a list (split) of NumPy arrays
-        gmted2010_data = list(map(
-            self.extract_gmted2010_data, 
-            splits, 
-            [self.root / 'gmted2010'] * len(splits)
-        ))
+        # Get the GMTED2010 data
+        gmted2010_data = dict()
+        for spl in splits:
+            gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
 
         # Save separately to save room on disk, scaling and concatenation can happen later
-        for split, cdsd, gmtedd in zip(splits, cds_data, gmted2010_data):
-            with open(self.root / f'{split}_x.npz', 'wb') as f:
-                np.savez(f, *cdsd, gmted2010=gmtedd)
+        for spl in splits:
+            with open(self.root / f'{spl}_x.npz', 'wb') as f:
+                np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
 
+        # Get target data
+        target_data = dict()
+        dstdir = self.target_dstdirs[0]  # every element of this list is the same
         if self.target_dataset.dataset == 'chirps':
-            # Returns a list (split) of NumPy arrays
-            target_data = list(map(self.extract_chirps_data, splits, self.target_dstdirs))
+            for spl in splits:
+                target_data[spl] = self.extract_chirps_data(spl, dstdir)
         
-        for split, td in zip(splits, target_data):
-            with open(self.root / f'{split}_y.npz', 'wb') as f:
-                np.savez(f, target=td)
+        # Save to disk
+        for spl in splits:
+            with open(self.root / f'{spl}_y.npz', 'wb') as f:
+                np.savez(f, target=target_data[spl])
 
     def get_subset(self, split: str) -> Self:
         if split == 'train':
@@ -179,14 +189,6 @@ class BSDDataset(torch.utils.data.Dataset):
         with open(self.root / Yfile, 'rb') as f:
             npzfile = np.load(f)
             self.Y = npzfile['target']
-
-    def get_lons_lats(self, region: Region) -> Tuple[np.array, np.array]:
-        lons, lats = [0, 0], [0, 0]
-        lons[0], lats[0] = region.top_left
-        lons[1], lats[1] = region.bottom_right
-        lons = np.array(lons)
-        lats = np.array(lats)
-        return lons, lats
 
     def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
         resolutions = [0.0625, 0.125, 0.25, 0.5, 0.75, 1]
@@ -239,29 +241,26 @@ class BSDDataset(torch.utils.data.Dataset):
         
         return urls
 
-    def extract_cds_targz(self, cds_api_requests: List[CDSAPIRequest]) -> List[str]:
-        direcs = []
-        for req in cds_api_requests:
+    def extract_cds_targz(self) -> None:
+        for req in self.cds_api_requests:
             src = req.output
             with tarfile.open(src) as tar:
-                dir_name = src.name.split('.')[0]
-                direcs.append(dir_name)
-                tar.extractall(path=dir_name)
-        return direcs
+                dir_path = src.parent / src.name.split('.')[1]
+                tar.extractall(path=dir_path)
 
     def extract_cds_data(self, split: str, src_dir: Path) -> np.array:
-        region = getattr(self, f'self.{split}_region')
-        dates = getattr(self, f'self.{split}_dates')
-        lons, lats = self.get_lons_lats(region)
-        lons = lon180_to_lon360(lons)
-        var_names = os.listdir(src_dir)
+        region = getattr(self, f'{split}_region')
+        dates = getattr(self, f'{split}_dates')
+        lons = region.get_longitudes(360)
+        lats = region.get_latitudes()
+        var_names = [x.split('_')[0] for x in os.listdir(src_dir)]
         result = []
         for vn in var_names:
-            ds = xr.open_mfdataset(f'{src_dir}/{vn}*.nc')
+            ds = xr.open_mfdataset(str(src_dir / f'{vn}*.nc'))
             xdata = getattr(ds, vn).sel(
                 time=slice(*dates),
-                lat=slice(*sorted(lats)),
-                lon=get_lon_mask(ds.lon, lons))  # JUST FOR DEMO EDGE CASE!!
+                lat=slice(*lats),
+                lon=slice(*lons))  # TODO @jasonjewik: investigate
             npdata = xdata.values  # time x lat x lon
             npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
             result.append(npdata)
@@ -269,24 +268,26 @@ class BSDDataset(torch.utils.data.Dataset):
         return result
 
     def extract_gmted2010_data(self, split: str, src: Path) -> np.array:
-        region = getattr(self, f'self.{split}_region')
-        lons, lats = self.get_lons_lats(region)
-        ds = xr.open_mfdataset(f'{src}/*.nc')
+        region = getattr(self, f'{split}_region')
+        lons = region.get_longitudes(180)
+        lats = region.get_latitudes()
+        ds = xr.open_mfdataset(str(src / '*.nc'))
         xdata = ds.elevation.sel(
-            latitude=slice(*sorted(lats)), 
-            longitude=slice(*sorted(lons)))
+            latitude=slice(*lats), 
+            longitude=slice(*lons))
         npdata = xdata.values.T  # lon x lat
         return npdata
             
     def extract_chirps_data(self, split: str, src: Path) -> np.array:
         dates = getattr(self, f'{split}_dates')
         region = getattr(self, f'{split}_region')
-        lons, lats = self.get_lons_lats(region)
-        ds = xr.open_mfdataset(f'{src}/*.nc')
+        lons = region.get_longitudes(180)
+        lats = region.get_latitudes()
+        ds = xr.open_mfdataset(str(src / '*.nc'))
         xdata = ds.precip.sel(
             time=slice(*dates),
-            latitude=slice(*sorted(lats)), 
-            longitude=slice(*sorted(lons)))
+            latitude=slice(*lats), 
+            longitude=slice(*lons))
         # Drop leap days since CDS datasets don't have those
         xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
         npdata = xdata.values  # time x lat x lon

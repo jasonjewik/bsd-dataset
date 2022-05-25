@@ -6,12 +6,6 @@ import xarray as xr
 import skimage.transform
 
 
-def irange(start, stop, step=1):
-    """
-    Inclusive range [start, stop].
-    """
-    return range(start, stop+1, step)
-
 def get_shape_of_largest_array(arr: List[np.array]) -> Tuple:
     """
     Takes a list of images, each of the shape (channels, width, height) and
@@ -38,12 +32,6 @@ def match_array_shapes(arr: List[np.array], shape: Tuple[int, int]) -> List[np.a
         resized_a = skimage.transform.resize(a, resized_shape, order=0, preserve_range=True)
         result.append(resized_a)
     return result
-
-def lon180_to_lon360(lon: float) -> float:
-    return (lon + 360) % 360
-
-def lon360_to_lon180(lon: float) -> float:
-    return ((lon + 180) % 360) - 180
 
 def get_lon_mask(da: xr.DataArray, lons: np.array) -> xr.DataArray:
     mask = da.values[(da < min(lons)) | (da > max(lons))]

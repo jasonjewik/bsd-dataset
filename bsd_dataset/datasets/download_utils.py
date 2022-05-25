@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import dataclass
 import os
 from pathlib import Path
@@ -30,7 +31,7 @@ class CDSAPIRequest:
     output: Path
 
 class CDSAPIRequestBuilder:
-    def build(self, root: str, dataset_request: DatasetRequest, train_dates: Tuple[str, str], val_dates: Tuple[str, str], test_dates: Tuple[str, str]) -> CDSAPIRequest:
+    def build(self, root: str, dataset_request: DatasetRequest, train_dates: Tuple[str, str], val_dates: Tuple[str, str], test_dates: Tuple[str, str]) -> List[CDSAPIRequest]:
         dataset = dataset_request.dataset
         try:
             model = getattr(dataset_request, 'model')
@@ -46,20 +47,17 @@ class CDSAPIRequestBuilder:
             for var in variable:
                 if var not in self.get_variables(model):
                     raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {var}')
-            if len(variable) == 1:
-                variable = variable[0]
         elif type(variable) == str:
             if variable not in self.get_variables(model):
                 raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {variable}')
+            variable = [variable]
         else:
             raise TypeError(f'CDS request {str(dataset_request)} "variable" parameter must be str or list type')
         try:
             ensemble_member = getattr(dataset_request, 'ensemble_member')
         except:
             raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
-        
-        output = root / 'cds' / dataset / f'{model}.tar.gz'
-        output = output.expanduser().resolve() 
+                
         periods = self.get_periods(model)
 
         train_periods, success = select_periods(*train_dates, periods)
@@ -93,16 +91,21 @@ class CDSAPIRequestBuilder:
         if len(periods) == 1:
             periods = periods[0]
 
-        options = {}
-        options['experiment'] = 'historical'
-        options['format'] = 'tgz'
-        options['model'] = model
-        options['period'] = periods
-        options['variable'] = variable
-        options['ensemble_member'] = ensemble_member
+        base_options = {}
+        base_options['experiment'] = 'historical'
+        base_options['format'] = 'tgz'
+        base_options['model'] = model
+        base_options['period'] = periods        
+        base_options['ensemble_member'] = ensemble_member
 
-        result = CDSAPIRequest(dataset, options, output)
-        return result
+        results = []
+        for var in variable:
+            options = deepcopy(base_options)
+            options['variable'] = var
+            output = root / 'cds' / dataset / f'{var}.{model}.tgz'
+            output = output.expanduser().resolve() 
+            results.append(CDSAPIRequest(dataset, options, output))
+        return results
 
     def format_periods(self, periods: List[Tuple[str, str]]) -> List[str]:
         result = []
@@ -130,7 +133,7 @@ class CDSAPIRequestBuilder:
         if model == 'ipsl_cm5a_mr':
             return [
                 ('1950-01-01', '1999-12-31'),
-                ('2000-01-01', '2005-13-31')
+                ('2000-01-01', '2005-12-31')
             ]
         if model == 'bnu_esm':
             return [
@@ -213,9 +216,6 @@ def download_url(url: str, dst: Path) -> None:
     dst = dst.expanduser().resolve()
     fname = os.path.basename(url)
     fpath = dst / fname
-    if fpath.is_file():
-        print(f'File {fpath} already exists')
-        return 
     dst.mkdir(parents=True, exist_ok=True)
     try:
         wget.download(url, out=str(fpath), bar=None)
@@ -260,9 +260,6 @@ def download_from_cds(request: CDSAPIRequest) -> None:
         request: A request to pass to the CDS API's retrieve method.
     """
     dst = request.output
-    if dst.is_dir():
-        print(f'Directory {dst} already exists')
-        return
     os.makedirs(dst.parent, exist_ok=True)
     c = cdsapi.Client()
     c.retrieve(request.dataset, request.options, request.output)
