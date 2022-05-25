@@ -13,7 +13,6 @@ import xarray as xr
 
 from bsd_dataset.regions import Region
 from bsd_dataset.datasets.download_utils import (
-    CDSAPIRequest,
     DatasetRequest,
     CDSAPIRequestBuilder,
     download_urls, 
@@ -22,7 +21,6 @@ from bsd_dataset.datasets.download_utils import (
 from bsd_dataset.datasets.dataset_utils import (
     get_shape_of_largest_array, 
     match_array_shapes,
-    get_lon_mask
 )
 
 
