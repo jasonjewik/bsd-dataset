@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import xarray as xr
 
+import bsd_dataset
 from bsd_dataset.regions import Region
 from bsd_dataset.datasets.download_utils import (
     DatasetRequest,
@@ -62,7 +63,25 @@ class BSDDBuilder:
         val_dates: Tuple[str, str],
         test_dates: Tuple[str, str],
         root: Path
-    ):
+    ):       
+        # Validate datasets
+        for ds_req in input_datasets:
+            if ds_req.dataset not in bsd_dataset.input_datasets:
+                raise ValueError(
+                    f'Requested dataset {ds_req.dataset} is unrecognized.\n'
+                    f'Must be one of {bsd_dataset.input_datasets}.'
+                )
+        if target_dataset.dataset not in bsd_dataset.target_datasets:
+            raise ValueError(
+                f'The target dataset "{target_dataset.dataset}" is unrecognized.\n'
+                f'Must be one of {bsd_dataset.target_datasets}.'
+            )
+
+        # Validate dates
+        dates = train_dates + val_dates + test_dates
+        for d in dates:
+            np.datetime64(d)
+
         # Save arguments
         self.input_datasets = input_datasets
         self.target_dataset = target_dataset

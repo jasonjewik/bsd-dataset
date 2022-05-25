@@ -2,7 +2,7 @@ import pytest
 
 from pathlib import Path
 from bsd_dataset import DatasetRequest, regions
-from bsd_dataset.datasets.dataset import BSDDataset
+from bsd_dataset.datasets.dataset import BSDDBuilder
 
 @pytest.fixture(scope='function')
 def root_dir(tmp_path_factory):
@@ -28,7 +28,7 @@ def test_download(root_dir):
         resolution=0.25
     )
 
-    dataset = BSDDataset(
+    builder = BSDDBuilder(
         input_datasets,
         target_dataset,
         train_region=regions.California,
@@ -37,21 +37,23 @@ def test_download(root_dir):
         train_dates=('1990-01-01', '1990-12-31'),
         val_dates=('1991-01-01', '1991-12-31'),
         test_dates=('1992-01-01', '1992-12-31'),
-        transform=None,
-        target_transform=None,
         root=root_dir
     )
 
     # Should be a no-op
-    dataset.download()
+    builder.download()
 
     # Only after building can we download
-    dataset.build_download_requests()
-    assert dataset.built_download_requests == True
-    dataset.download()
+    builder.prepare_download_requests()
+    assert builder.built_download_requests == True
+    builder.download()
 
     # Check that the correct files were retrieved
-    f = root_dir / 'cds' / 'projections-cmip5-daily-single-levels' / 'gfdl_cm3.tar.gz'
+    f = (
+        root_dir / 'cds' / 
+        'projections-cmip5-daily-single-levels' / 
+        'mean_precipitation_flux.gfdl_cm3.tgz'
+    )
     assert f.is_file()
     f = root_dir / 'chirps' / 'chirps-v2.0.1990.days_p25.nc'
     assert f.is_file()

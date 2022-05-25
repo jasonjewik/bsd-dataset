@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import pytest
 
-from bsd_dataset import CDSAPICredentialHelper
+from bsd_dataset.setup_cdsapi import CDSAPICredentialHelper
 from bsd_dataset.datasets.download_utils import DatasetRequest, CDSAPIRequestBuilder
 
 
@@ -68,8 +68,7 @@ def builder_fixture():
             self.builder = CDSAPIRequestBuilder()
             self.root = Path('./data').expanduser().resolve()    
             self.dataset = 'projections-cmip5-daily-single-levels'
-            self.model = 'gfdl_cm3'
-            self.expected_output = self.root / 'cds' / self.dataset / f'{self.model}.tar.gz'
+            self.model = 'gfdl_cm3'            
             self.builder_kwargs = {
                 'root': self.root,
                 'train_dates': ('1981-01-01', '1981-12-31'),
@@ -114,12 +113,17 @@ class TestRequestBuilder:
             'model': builder_fixture.model,
             'period': '19800101-19841231',
         }
+        expected_output = (
+            builder_fixture.root / 'cds' / 
+            builder_fixture.dataset / 
+            f'mean_precipitation_flux.{builder_fixture.model}.tgz'
+        )
         kwargs = builder_fixture.kwargs
         kwargs['dataset_request'] = dataset_request
-        request = builder_fixture.build(**kwargs)
+        request = builder_fixture.build(**kwargs)[0]
 
         assert request.dataset == builder_fixture.dataset
-        assert request.output == builder_fixture.expected_output
+        assert request.output == expected_output
         assert request.options == expected_options
 
         # List of variables
@@ -129,21 +133,44 @@ class TestRequestBuilder:
             ensemble_member='r1i1p1',
             variable=['mean_precipitation_flux', '10m_wind_speed']
         )
-        expected_options = {
-            'ensemble_member': 'r1i1p1',
-            'format': 'tgz',
-            'experiment': 'historical',
-            'variable': ['mean_precipitation_flux', '10m_wind_speed'],
-            'model': builder_fixture.model,
-            'period': '19800101-19841231',
-        }
+        expected_options = [
+            {
+                'ensemble_member': 'r1i1p1',
+                'format': 'tgz',
+                'experiment': 'historical',
+                'variable': 'mean_precipitation_flux',
+                'model': builder_fixture.model,
+                'period': '19800101-19841231'
+            },
+            {
+                'ensemble_member': 'r1i1p1',
+                'format': 'tgz',
+                'experiment': 'historical',
+                'variable': '10m_wind_speed',
+                'model': builder_fixture.model,
+                'period': '19800101-19841231',
+            }
+        ]
+        expected_output = [
+            (
+                builder_fixture.root / 'cds' / 
+                builder_fixture.dataset / 
+                f'mean_precipitation_flux.{builder_fixture.model}.tgz'
+            ),
+            (
+                builder_fixture.root / 'cds' / 
+                builder_fixture.dataset / 
+                f'10m_wind_speed.{builder_fixture.model}.tgz'
+            ),
+        ]
         kwargs = builder_fixture.kwargs
         kwargs['dataset_request'] = dataset_request
-        request = builder_fixture.build(**kwargs)
+        requests = builder_fixture.build(**kwargs)
 
-        assert request.dataset == builder_fixture.dataset
-        assert request.output == builder_fixture.expected_output
-        assert request.options == expected_options
+        for i, req in enumerate(requests):
+            assert req.dataset == builder_fixture.dataset
+            assert req.output == expected_output[i]
+            assert req.options == expected_options[i]
 
     def test_missing_model(self, builder_fixture):
         # kwarg "model" is missing in the dataset request
