@@ -78,9 +78,18 @@ class BSDDBuilder:
             )
 
         # Validate dates
-        dates = train_dates + val_dates + test_dates
-        for d in dates:
-            np.datetime64(d)
+        if np.datetime64(train_dates[0]) > np.datetime64(train_dates[1]):
+            raise ValueError(
+                'End of training period should come after the start'
+            )
+        if np.datetime64(val_dates[0]) > np.datetime64(val_dates[1]):
+            raise ValueError(
+                'End of validation period should come after the start'
+            )
+        if np.datetime64(test_dates[0]) > np.datetime64(test_dates[1]):
+            raise ValueError(
+                'End of testing period should come after the start'
+            )
 
         # Save arguments
         self.input_datasets = input_datasets
@@ -91,6 +100,10 @@ class BSDDBuilder:
         self.train_dates = train_dates
         self.val_dates = val_dates
         self.test_dates = test_dates
+
+        # Check that root exists
+        root = root.expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
         self.root = root
 
         # Build parameters
@@ -117,18 +130,23 @@ class BSDDBuilder:
                 input_urls.append(self.get_gmted2010_url(ds_req))
                 input_dstdirs.append(self.root / 'gmted2010')       
     
-        target_urls, target_dstdirs = [], []
+        target_urls, target_dstdir = [], Path()
         if self.target_dataset.dataset == 'chirps':
             chirps_urls = self.get_chirps_urls(self.target_dataset)
             target_urls.extend(chirps_urls)
-            target_dstdirs = [self.root / 'chirps'] * len(chirps_urls)
+            target_dstdir = self.root / 'chirps'
+        if self.target_dataset.dataset == 'persiann-cdr':
+            persianncdr_urls = self.get_persianncdr_urls()
+            target_urls.extend(persianncdr_urls)
+            target_dstdir = self.root / 'persiann-cdr'
+        target_dstdir.mkdir(parents=True, exist_ok=True)
                 
         self.cds_api_requests = cds_api_requests
         self.cds_dstdirs = list(set(cds_dstdirs))
         self.input_urls = input_urls
         self.input_dstdirs = input_dstdirs
         self.target_urls = target_urls
-        self.target_dstdirs = target_dstdirs
+        self.target_dstdir = target_dstdir
         self.built_download_requests = True
 
         return self
@@ -145,9 +163,10 @@ class BSDDBuilder:
             'https://cds.climate.copernicus.eu/cdsapp#!/yourrequests.\n'
             '==========================================================='
         )
+        target_dstdirs = [self.target_dstdir] * len(self.target_urls)
         download_urls(
             self.input_urls + self.target_urls, 
-            self.input_dstdirs + self.target_dstdirs,
+            self.input_dstdirs + target_dstdirs,
             n_workers=5
         )
         multidownload_from_cds(self.cds_api_requests, n_workers=5)
@@ -182,7 +201,7 @@ class BSDDBuilder:
 
         # Get target data
         target_data = dict()
-        dstdir = self.target_dstdirs[0]  # every element of this list is the same
+        dstdir = self.target_dstdir
         if self.target_dataset.dataset == 'chirps':
             for spl in splits:
                 target_data[spl] = self.extract_chirps_data(spl, dstdir)
@@ -269,6 +288,28 @@ class BSDDBuilder:
                 f'global_daily/netcdf/p{str_res}/chirps-v2.0.{year}.days_p{str_res}.nc'
                 for year in range(a, b+1)
             ])
+        
+        return urls
+
+    def get_persianncdr_urls(self) -> List[str]:
+        urls = []
+        persiann_start = np.datetime64('1983-01-01')
+        persiann_end = np.datetime64('2021-12-31')
+
+        for start, end in [self.train_dates, self.val_dates, self.test_dates]:
+            start_time = np.datetime64(start)
+            end_time = np.datetime64(end)
+            if persiann_start < start_time < end_time < persiann_end:
+                urls.append(
+                    'https://www.ncei.noaa.gov/erddap/griddap/cdr_persiann_by_time_lon_lat.nc'
+                    f'?precipitation%5B({start}T00:00:00Z):1:({end}T00:00:00Z)%5D%5B'
+                    '(0.125):1:(359.875)%5D%5B(59.875):1:(-59.875)%5D'
+                )
+            else:
+                raise ValueError(
+                    f'requested dates ({start}, {end}) are out of range for PERSIANN-CDR,'
+                    ' which must be in 1983-2021'
+                )
         
         return urls
 

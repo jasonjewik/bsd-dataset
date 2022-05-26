@@ -12,7 +12,8 @@ input_datasets = [
 ]
 
 target_datasets = [
-    'chirps'
+    'chirps',
+    'persiann-cdr'
 ]
 
 supported_datasets = input_datasets + target_datasets

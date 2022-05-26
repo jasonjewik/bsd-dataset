@@ -8,7 +8,7 @@ import queue
 
 import wget
 import cdsapi
-import numpy as np      
+import numpy as np
 
 
 class DatasetRequest:
@@ -22,7 +22,11 @@ class DatasetRequest:
         return result
 
     def is_cds_req(self) -> bool:
-        cds_datasets = ['projections-cmip5-daily-single-levels']
+        cds_datasets = [
+            'projections-cmip5-daily-single-levels',
+            'projections-cmip5-daily-pressure-levels',
+            'projections-cmip6'
+        ]
         return self.dataset in cds_datasets
 
 @dataclass
@@ -32,7 +36,16 @@ class CDSAPIRequest:
     output: Path
 
 class CDSAPIRequestBuilder:
-    def build(self, root: str, dataset_request: DatasetRequest, train_dates: Tuple[str, str], val_dates: Tuple[str, str], test_dates: Tuple[str, str]) -> List[CDSAPIRequest]:
+    def build(
+        self,
+        root: Path, 
+        dataset_request: DatasetRequest, 
+        train_dates: Tuple[str, str],
+        val_dates: Tuple[str, str],
+        test_dates: Tuple[str, str]
+    ) -> List[CDSAPIRequest]:
+        results = []
+
         dataset = dataset_request.dataset
         try:
             model = getattr(dataset_request, 'model')
@@ -54,58 +67,72 @@ class CDSAPIRequestBuilder:
             variable = [variable]
         else:
             raise TypeError(f'CDS request {str(dataset_request)} "variable" parameter must be str or list type')
-        try:
-            ensemble_member = getattr(dataset_request, 'ensemble_member')
-        except:
-            raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
-                
-        periods = self.get_periods(model)
 
-        train_periods, success = select_periods(*train_dates, periods)
-        if not success:
-            raise ValueError(
-                f'the given train dates are not available for dataset {dataset} and model {model}\n'
-                f'available dates are: {self.get_periods(model)}'
-            )
-        train_periods = self.format_periods(train_periods)
 
-        val_periods, success = select_periods(*val_dates, periods)
-        if not success:
-            raise ValueError(
-                f'the given val dates are not available for dataset {dataset} and model {model}\n'
-                f'available dates are: {self.get_periods(model)}'
-            )
-        val_periods = self.format_periods(val_periods)
+        if dataset in ('projections-cmip5-daily-single-levels', 'projections-cmip5-daily-pressure-levels'):
+            try:
+                ensemble_member = getattr(dataset_request, 'ensemble_member')
+            except:
+                raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
+  
+            periods = self.get_periods(model)
 
-        test_periods, success = select_periods(*test_dates, periods)
-        if not success:
-            raise ValueError(
-                f'the given test dates are not available for dataset {dataset} and model {model}\n'
-                f'available dates are: {self.get_periods(model)}'
-            )
-        test_periods = self.format_periods(test_periods)
+            train_periods, success = select_periods(*train_dates, periods)
+            if not success:
+                raise ValueError(
+                    f'the given train dates are not available for dataset {dataset} and model {model}\n'
+                    f'available dates are: {self.get_periods(model)}'
+                )
+            train_periods = self.format_periods(train_periods)
 
-        periods = train_periods
-        periods.extend(val_periods)
-        periods.extend(test_periods)
-        periods = sorted(set(periods))
-        if len(periods) == 1:
-            periods = periods[0]
+            val_periods, success = select_periods(*val_dates, periods)
+            if not success:
+                raise ValueError(
+                    f'the given val dates are not available for dataset {dataset} and model {model}\n'
+                    f'available dates are: {self.get_periods(model)}'
+                )
+            val_periods = self.format_periods(val_periods)
 
-        base_options = {}
-        base_options['experiment'] = 'historical'
-        base_options['format'] = 'tgz'
-        base_options['model'] = model
-        base_options['period'] = periods        
-        base_options['ensemble_member'] = ensemble_member
+            test_periods, success = select_periods(*test_dates, periods)
+            if not success:
+                raise ValueError(
+                    f'the given test dates are not available for dataset {dataset} and model {model}\n'
+                    f'available dates are: {self.get_periods(model)}'
+                )
+            test_periods = self.format_periods(test_periods)
 
-        results = []
+            periods = train_periods
+            periods.extend(val_periods)
+            periods.extend(test_periods)
+            periods = sorted(set(periods))
+            if len(periods) == 1:
+                periods = periods[0]
+
+            base_options = {}
+            base_options['experiment'] = 'historical'
+            base_options['format'] = 'tgz'
+            base_options['model'] = model
+            base_options['period'] = periods        
+            base_options['ensemble_member'] = ensemble_member            
+
+        if dataset == 'projections-cmip6':
+            base_options = {}
+            base_options['temporal_resolution'] = 'daily'
+            base_options['experiment'] = 'historical'
+            base_options['level'] = 'single_levels'
+            base_options['model'] = model
+            base_options['format'] = 'zip'
+
+            all_dates = [np.datetime64(d) for d in train_dates + val_dates + test_dates]
+            base_options['date'] = f'{min(all_dates)}/{max(all_dates)}'
+
         for var in variable:
             options = deepcopy(base_options)
             options['variable'] = var
-            output = root / 'cds' / dataset / f'{var}.{model}.tgz'
+            output = root / 'cds' / dataset / f'{var}.{model}.{options["format"]}'
             output = output.expanduser().resolve() 
             results.append(CDSAPIRequest(dataset, options, output))
+
         return results
 
     def format_periods(self, periods: List[Tuple[str, str]]) -> List[str]:
@@ -116,65 +143,119 @@ class CDSAPIRequestBuilder:
             result.append(start + '-' + stop)
         return result
 
-    def get_periods(self, model: str) -> List[Tuple[str, str]]:
-        if model == 'ccsm4':
-            return [
-                ('1950-01-01', '1989-12-31'),
-                ('1990-01-01', '2005-12-31')
-            ]
-        if model == 'gfdl_cm3':
-            return [
-                ('1980-01-01', '1984-12-31'),
-                ('1985-01-01', '1989-12-31'),
-                ('1990-01-01', '1994-12-31'),
-                ('1995-01-01', '1999-12-31'),
-                ('2000-01-01', '2004-12-31'),
-                ('2005-01-01', '2005-12-31')
-            ]
-        if model == 'ipsl_cm5a_mr':
-            return [
-                ('1950-01-01', '1999-12-31'),
-                ('2000-01-01', '2005-12-31')
-            ]
-        if model == 'bnu_esm':
-            return [
-                ('1950-01-01', '2005-12-31')
-            ]
-        if model == 'hadcm3':
-            return [
-                ('1959-12-01', '1984-11-30'),
-                ('1984-12-01', '2005-12-30')
-            ]
+    def get_periods(self, dataset: str, model: str) -> List[Tuple[str, str]]:
+        if dataset == 'projections-cmip5-daily-single-levels':
+            if model == 'ccsm4':
+                return [
+                    ('1950-01-01', '1989-12-31'),
+                    ('1990-01-01', '2005-12-31')
+                ]
+            if model == 'gfdl_cm3':
+                return [
+                    ('1980-01-01', '1984-12-31'),
+                    ('1985-01-01', '1989-12-31'),
+                    ('1990-01-01', '1994-12-31'),
+                    ('1995-01-01', '1999-12-31'),
+                    ('2000-01-01', '2004-12-31'),
+                    ('2005-01-01', '2005-12-31')
+                ]
+            if model == 'ipsl_cm5a_mr':
+                return [
+                    ('1950-01-01', '1999-12-31'),
+                    ('2000-01-01', '2005-12-31')
+                ]
+            if model == 'bnu_esm':
+                return [
+                    ('1950-01-01', '2005-12-31')
+                ]
+            if model == 'hadcm3':
+                return [
+                    ('1959-12-01', '1984-11-30'),
+                    ('1984-12-01', '2005-12-30')
+                ]
+        if dataset == 'projections-cmip5-daily-pressure-levels':
+            if model == 'ccsm4':
+                return [
+                    ('1980-01-01', '1984-12-31'),
+                    ('1985-01-01', '1989-12-31'),
+                    ('1990-01-01', '1994-12-31'),
+                    ('1995-01-01', '1999-12-31'),
+                    ('2000-01-01', '2005-12-31')
+                ]
+            if model == 'gfdl_cm3':
+                return [
+                    ('1980-01-01', '1984-12-31'),
+                    ('1985-01-01', '1989-12-31'),
+                    ('1990-01-01', '1994-12-31'),
+                    ('1995-01-01', '1999-12-31'),
+                    ('2000-01-01', '2004-12-31'),
+                    ('2005-01-01', '2005-12-31')
+                ]
+            if model == 'ipsl_cm5a_mr':
+                return [
+                    ('1980-01-01', '1989-12-31'),
+                    ('1990-01-01', '1999-12-31'),
+                    ('2000-01-01', '2005-12-31')
+                ]
+            if model == 'bnu_esm':
+                return [
+                    ('1950-01-01', '2005-12-31')
+                ]
+            if model == 'hadcm3':
+                return [
+                    ('1959-12-01', '1984-11-30'),
+                    ('1984-12-01', '2005-12-30')
+                ]
 
-    def get_variables(self, model: str) -> List[str]:
-        all_vars = [
-            'snowfall',
-            '10m_wind_speed',
-            '2m_temperature',
-            'mean_precipitation_flux', 
-            'mean_sea_level_pressure',
-            'near_surface_specific_humidity',
-            'surface_solar_radiation_downwards',
-            'daily_near_surface_relative_humidity',
-            'maximum_2m_temperature_in_the_last_24_hours',
-            'minimum_2m_temperature_in_the_last_24_hours'            
-        ]
-
-        if model == 'ccsm4':
-            all_vars.remove('10m_wind_speed')
-            all_vars.remove('daily_near_surface_relative_humidity')
-            return all_vars
-        if model == 'gfdl_cm3':
-            return all_vars
-        if model == 'ipsl_cm5a_mr':
-            return all_vars
-        if model == 'bnu_esm':
-            return all_vars
-        if model == 'hadcm3':
-            all_vars.remove('snowfall')
-            all_vars.remove('surface_solar_radiation_downwards')
-            all_vars.remove('daily_near_surface_relative_humidity')
-            return all_vars
+    def get_variables(self, dataset: str, model: str) -> List[str]:
+        if dataset in ('projections-cmip5-daily-single-levels', 'projections-cmip5-daily-pressure-levels'):
+            all_vars = [
+                'snowfall',
+                '10m_wind_speed',
+                '2m_temperature',
+                'mean_precipitation_flux', 
+                'mean_sea_level_pressure',
+                'near_surface_specific_humidity',
+                'surface_solar_radiation_downwards',
+                'daily_near_surface_relative_humidity',
+                'maximum_2m_temperature_in_the_last_24_hours',
+                'minimum_2m_temperature_in_the_last_24_hours'            
+            ]
+            if model == 'ccsm4':
+                all_vars.remove('10m_wind_speed')
+                all_vars.remove('daily_near_surface_relative_humidity')
+            if model == 'gfdl_cm3':
+                pass
+            if model == 'ipsl_cm5a_mr':
+                pass
+            if model == 'bnu_esm':
+                pass
+            if model == 'hadcm3':
+                all_vars.remove('snowfall')
+                all_vars.remove('surface_solar_radiation_downwards')
+                all_vars.remove('daily_near_surface_relative_humidity')
+        
+        if dataset == 'cmip6-projections':
+            all_vars = [
+                'daily_maximum_near_surface_air_temperature',
+                'daily_minimum_near_surface_air_temperature',
+                'near_surface_air_temperature',
+                'near_surface_specific_humidity',
+                'near_surface_wind_speed',
+                'precipitation',
+                'sea_level_pressure'
+            ]
+            if model == 'gfdl_esm4':
+                pass
+            if model == 'ipsl_cm6a_lr':
+                all_vars.remove('near_surface_specific_humidity')
+                all_vars.remove('sea_level_pressure')
+            if model == 'bcc_esm1':
+                all_vars.remove('near_surface_specific_humidity')
+            if model == 'hadgem3_gc31_mm':
+                all_vars.remove('daily_maximum_near_surface_air_temperature')
+        
+        return all_vars
 
 def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tuple[List[Tuple[str, str]], bool]:
     if len(periods) == 0:
@@ -207,32 +288,13 @@ def select_periods(start: str, end: str, periods: List[Tuple[str, str]]) -> Tupl
     return selected, success
 
 def download_url(url: str, dst: Path) -> None:
-    """
-    Downloads a file from a URL and places it in dst.
-
-    Parameters:
-        url: URL to download the file from.
-        dst: Directory to place downloaded file in.
-    """
-    dst = dst.expanduser().resolve()
-    fname = os.path.basename(url)
-    fpath = dst / fname
-    dst.mkdir(parents=True, exist_ok=True)
     try:
-        wget.download(url, out=str(fpath), bar=None)
+        wget.download(url, out=str(dst), bar=None)
     except Exception as e:
         print(e)
         print(f'could not download {url}')
 
 def download_urls(urls: List[str], dsts: List[Path], n_workers: int = 1) -> None:
-    """
-    Downloads files from a list of URLs and places them in corresponding destinations.
-
-    Parameters:
-        urls: A list of URLs to download files from
-        dsts: Directories to place the downloaded files in
-        n_workers: If an integer greater than one is specified, that many threads will be used for the downloads. If not specified, no additional threads will be spawned.
-    """
     if len(urls) != len(dsts):
         raise ValueError('the number of URLs and output directories must be the same')
     
