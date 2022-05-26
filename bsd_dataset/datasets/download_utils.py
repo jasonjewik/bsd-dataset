@@ -301,6 +301,7 @@ def download_urls(urls: List[str], dsts: List[Path], n_workers: int = 1) -> None
     if n_workers == 1:
         for url, dst in zip(urls, dsts):
             download_url(url, dst)
+            print(f'Download {url} to {dst}')
     else:
         q = queue.Queue()
         def worker():

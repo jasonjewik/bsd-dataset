@@ -84,10 +84,8 @@ class TestDownload:
         assert builder.built_download_requests == True
         builder.download()
         
-        # one file for the training period, the validation period, and the testing period
         dstdir = root_dir / 'persiann-cdr'
         assert dstdir.is_dir()
-        assert len(os.listdir(dstdir)) == 3
 
     def test_download_persianncdr_oor(self, root_dir):
         input_datasets = []

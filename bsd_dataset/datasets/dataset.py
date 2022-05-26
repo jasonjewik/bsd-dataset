@@ -2,11 +2,13 @@ from collections import defaultdict
 from itertools import product
 from pathlib import Path
 import os
+import re
 import tarfile
 from typing import List, Optional, Tuple
 from typing_extensions import Self
 
 import numpy as np
+import pandas as pd
 import torch
 import xarray as xr
 
@@ -302,17 +304,42 @@ class BSDDBuilder:
             start_time = np.datetime64(start)
             end_time = np.datetime64(end)
             if persiann_start < start_time < end_time < persiann_end:
-                urls.append(
-                    'https://www.ncei.noaa.gov/erddap/griddap/cdr_persiann_by_time_lon_lat.nc'
-                    f'?precipitation%5B({start}T00:00:00Z):1:({end}T00:00:00Z)%5D%5B'
-                    '(0.125):1:(359.875)%5D%5B(59.875):1:(-59.875)%5D'
-                )
+                pass
             else:
                 raise ValueError(
                     f'requested dates ({start}, {end}) are out of range for PERSIANN-CDR,'
                     ' which must be in 1983-2021'
                 )
         
+        train_dates = pd.date_range(*self.train_dates)
+        val_dates = pd.date_range(*self.val_dates)
+        test_dates = pd.date_range(*self.test_dates)
+        years = [d.year for d in train_dates]
+        years.extend([d.year for d in val_dates])
+        years.extend([d.year for d in test_dates])
+        years = sorted(set(years))
+        index_urls = [
+            f'https://www.ncei.noaa.gov/data/precipitation-persiann/access/{y}/'
+            for y in years
+        ]
+        dstdirec = self.root / 'tmp'
+        dstdirec.mkdir(parents=True, exist_ok=True)
+        dsts = [dstdirec / f'persiann.{y}.html' for y in years]
+        download_urls(index_urls, dsts)
+
+        urls = []
+        for dst in dsts:
+            with open(dst, 'r') as f:
+                for line in f:
+                    match = re.search('>PERSIANN-CDR_.*.nc<', line)
+                    if match:
+                        fname = match.group(0)[1:-1]
+                        year = fname.split('_')[2][:4]
+                        urls.append(
+                            'https://www.ncei.noaa.gov/data/precipitation-persiann'
+                            f'/access/{year}/{fname}'
+                        )
+
         return urls
 
     def extract_cds_targz(self) -> None:
