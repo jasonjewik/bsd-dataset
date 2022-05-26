@@ -59,10 +59,10 @@ class CDSAPIRequestBuilder:
             if len(variable) == 0:
                 raise ValueError(f'CDS request {str(dataset_request)} has empty required parameter "variable')            
             for var in variable:
-                if var not in self.get_variables(model):
+                if var not in self.get_variables(dataset, model):
                     raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {var}')
         elif type(variable) == str:
-            if variable not in self.get_variables(model):
+            if variable not in self.get_variables(dataset, model):
                 raise ValueError(f'CDS request {str(dataset_request)} has unrecognized variable {variable}')
             variable = [variable]
         else:
@@ -75,7 +75,7 @@ class CDSAPIRequestBuilder:
             except:
                 raise AttributeError(f'CDS request {str(dataset_request)} is missing required parameter "ensemble_member"')
   
-            periods = self.get_periods(model)
+            periods = self.get_periods(dataset, model)
 
             train_periods, success = select_periods(*train_dates, periods)
             if not success:

@@ -128,7 +128,9 @@ class BSDDBuilder:
                 cds_api_requests.extend(cds_api_reqs)
             if ds_req.dataset == 'gmted2010':
                 input_urls.append(self.get_gmted2010_url(ds_req))
-                input_dstdirs.append(self.root / 'gmted2010')       
+                direc = self.root / 'gmted2010'
+                direc.mkdir(parents=True, exist_ok=True)
+                input_dstdirs.append(direc)
     
         target_urls, target_dstdir = [], Path()
         if self.target_dataset.dataset == 'chirps':
@@ -255,7 +257,7 @@ class BSDDBuilder:
         elif res == 0.25:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
         elif res == 0.5:
-            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0250deg.nc'
+            url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n060_0500deg.nc'
         elif res == 0.75:
             url = 'https://d1qb6yzwaaq4he.cloudfront.net/data/gmted2010/GMTED2010_15n180_0750deg.nc'
         elif res == 1:
