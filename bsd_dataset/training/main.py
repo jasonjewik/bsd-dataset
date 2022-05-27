@@ -1,39 +1,23 @@
 import os
-# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3" 
-# import tensorflow as tf
-
-import os.path as osp
-import argparse
 import time
 import torch
-from torch.utils.data import DataLoader
+import argparse
 import numpy as np
+
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import yaml
 from attrdict import AttrDict
 import wandb
 import pickle
 
-from models.tnpd import TNPD
-from models.tnpa import TNPA
 from models.convlnp import CONVLNP
 from clidow import ClimateDataset
-# from data.data_utils import ClimateDataset
 
 from utils.metrics import correlations, mae, mean_bias
 from utils.paths import results_path, datasets_path, evalsets_path
 from utils.misc import load_module
 from utils.log import get_logger, RunningAverage
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -43,7 +27,7 @@ def main():
     parser.add_argument("--expid", type=str, default="default")
     parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--gpu", type=int, default=0)  # default(-1): device="cpu"
-    parser.add_argument("--wandb", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--wandb", action = "store_true", default=False)
 
     # Data
     parser.add_argument("--data", type=str, default="data")
@@ -55,9 +39,9 @@ def main():
     parser.add_argument("--config", type=str, required=True)
 
     # Train
-    parser.add_argument("--multivariate", type=str2bool, nargs="?", const=True, default=True)
-    parser.add_argument("--temporal_context", type=str2bool, nargs="?", const=True, default=False)
-    parser.add_argument("--temporal_target", type=str2bool, nargs="?", const=True, default=False)
+    parser.add_argument("--multivariate", action = "store_true", default=False)
+    parser.add_argument("--temporal_context", action = "store_true", default=False)
+    parser.add_argument("--temporal_target", action = "store_true", default=False)
     parser.add_argument("--history_len", type=int, default=10)
     parser.add_argument("--offset", type=int, default=10)
     parser.add_argument("--overwrite", action="store_true", default = False)
@@ -79,7 +63,7 @@ def main():
     args = parser.parse_args()
     os.environ["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
 
-    args.root = osp.join(results_path, args.model, args.expid)
+    args.root = os.path.join(results_path, args.model, args.expid)
 
     model_cls = getattr(load_module(f"models/{args.model}.py"), args.model.upper())
     with open(args.config, "r") as f:
@@ -117,14 +101,14 @@ def prepare_data(low_res_data, station_data, args):
     return low_res_data, station_in, station_out
 
 def train(args, model):
-    if osp.exists(args.root + "/ckpt.tar"):
+    if os.path.exists(args.root + "/ckpt.tar"):
         if args.resume is None:
             if not args.overwrite:
                 raise FileExistsError(args.root)
     else:
         os.makedirs(args.root, exist_ok=True)
 
-    with open(osp.join(args.root, "args.yaml"), "w") as f:
+    with open(os.path.join(args.root, "args.yaml"), "w") as f:
         yaml.dump(args.__dict__, f)
 
     train_dataset = ClimateDataset(
@@ -143,14 +127,14 @@ def train(args, model):
         optimizer, T_max=len(train_dataloader)*args.num_epochs)
 
     if args.resume:
-        ckpt = torch.load(osp.join(args.root, "ckpt.tar"))
+        ckpt = torch.load(os.path.join(args.root, "ckpt.tar"))
         model.load_state_dict(ckpt.model)
         optimizer.load_state_dict(ckpt.optimizer)
         scheduler.load_state_dict(ckpt.scheduler)
         logfilename = ckpt.logfilename
         start_epoch = ckpt.epoch
     else:
-        logfilename = osp.join(args.root, "train_{}.log".format(
+        logfilename = os.path.join(args.root, "train_{}.log".format(
             time.strftime("%Y%m%d-%H%M")))
         start_epoch = 1
 
@@ -175,7 +159,7 @@ def train(args, model):
   
             optimizer.zero_grad()
             
-            if args.model in ["tnpa", "tnpd", "convcnp"]:
+            if args.model in ["convcnp"]:
                 outs = model(low_res_data, station_in, station_out)
             elif args.model in ["convlnp"]:
                 outs = model(low_res_data, station_in, station_out, num_samples=args.train_num_samples)
@@ -216,7 +200,7 @@ def train(args, model):
             ckpt.scheduler = scheduler.state_dict()
             ckpt.logfilename = logfilename
             ckpt.epoch = epoch + 1
-            torch.save(ckpt, osp.join(args.root, "ckpt.tar"))
+            torch.save(ckpt, os.path.join(args.root, "ckpt.tar"))
     
     args.mode = "eval"
     eval(args, model)
@@ -226,13 +210,13 @@ def train(args, model):
 
 def eval(args, model):
     if args.mode == "eval":
-        ckpt = torch.load(osp.join(args.root, "ckpt.tar"))
+        ckpt = torch.load(os.path.join(args.root, "ckpt.tar"))
         model.load_state_dict(ckpt.model)
         if args.eval_logfile is None:
             eval_logfile = f"eval.log"
         else:
             eval_logfile = args.eval_logfile
-        filename = osp.join(args.root, eval_logfile)
+        filename = os.path.join(args.root, eval_logfile)
         logger = get_logger(filename, mode="w")
     else:
         logger = None
@@ -259,13 +243,7 @@ def eval(args, model):
             low_res_data, station_in, station_out = \
                 prepare_data(low_res_data, station_data, args)
 
-            if args.model in ["tnpa", "tnpd"]:
-                # pred_dist = model.predict(low_res_data, station_in, station_out)
-                if torch.cuda.device_count() > 1:
-                    pred_dist = model.module.predict(low_res_data, station_in, station_out)
-                else:
-                    pred_dist = model.predict(low_res_data, station_in, station_out)
-            elif args.model in ["convcnp"]:
+            if args.model in ["convcnp"]:
                 pred_dist = model.predict(low_res_data, station_in)
             elif args.model in ["convlnp"]:
                 pred_dist = model.predict(low_res_data, station_in, num_samples=args.eval_num_samples)
