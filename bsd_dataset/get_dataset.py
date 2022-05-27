@@ -20,7 +20,8 @@ def get_dataset(
     extract: bool = False,
     root: str = './data',
     cds_uid: Optional[str] = None,
-    cds_key: Optional[str] = None
+    cds_key: Optional[str] = None,
+    device: str = 'cpu'
 ) -> BSDDBuilder:
 
     # Check for CDS 
@@ -41,7 +42,8 @@ def get_dataset(
         train_dates,
         val_dates,
         test_dates,
-        Path(root)
+        Path(root),
+        device=device
     )
     builder.prepare_download_requests()
 
