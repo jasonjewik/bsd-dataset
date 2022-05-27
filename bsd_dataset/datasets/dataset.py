@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import re
 import tarfile
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 from typing_extensions import Self
 
 import numpy as np
@@ -29,27 +29,34 @@ class BSDD(torch.utils.data.Dataset):
 
     def __init__(
         self,
-        X: np.ndarray,
-        Y: np.ndarray,
-        transform: Optional[torch.nn.Module],
-        target_transform: Optional[torch.nn.Module],
+        X: torch.Tensor,
+        Y: torch.Tensor,
+        transform: Optional[torch.nn.Module] = None,
+        target_transform: Optional[torch.nn.Module] = None,
+        device: Union[str, torch.device] = 'cpu'
     ):
         self.X = X
         self.Y = Y
         self.transform = transform
         self.target_transform = target_transform
+        self.device = device
 
     def __len__(self) -> int:
         return self.X.shape[0]
 
-    def __getitem__(self, idx: int) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.X[idx]
         if self.transform:
-            x = self.transform(x)
+            x = self.transform(x)        
+
         y = self.Y[idx]
         if self.target_transform:
-            y = self.target_transform(y)
-        mask = np.isnan(y)
+            y = self.target_transform(y)        
+        
+        x = x.to(self.device)
+        y = y.to(self.device)
+        mask = torch.isnan(y)
+        
         return x, y, mask
 
 class BSDDBuilder:
@@ -64,7 +71,8 @@ class BSDDBuilder:
         train_dates: Tuple[str, str],
         val_dates: Tuple[str, str],
         test_dates: Tuple[str, str],
-        root: Path
+        root: Path,
+        device: Union[str, torch.device] = 'cpu'
     ):       
         # Validate datasets
         for ds_req in input_datasets:
@@ -102,6 +110,7 @@ class BSDDBuilder:
         self.train_dates = train_dates
         self.val_dates = val_dates
         self.test_dates = test_dates
+        self.device = torch.device(device)
 
         # Check that root exists
         root = root.expanduser().resolve()
@@ -222,10 +231,10 @@ class BSDDBuilder:
         if split not in splits:
             raise ValueError(f'Split {split} not recognized\nMust be of {splits}')
         X, Y = self.load_XY(f'{split}_x.npz', f'{split}_y.npz')
-        dataset = BSDD(X, Y, transform, target_transform)
+        dataset = BSDD(X, Y, transform, target_transform, self.device)
         return dataset
 
-    def load_XY(self, Xfile, Yfile) -> Tuple[np.ndarray, np.ndarray]:
+    def load_XY(self, Xfile, Yfile) -> Tuple[torch.Tensor, torch.Tensor]:
         with open(self.root / Xfile, 'rb') as f:
             npzfile = np.load(f)
             arrs = [npzfile[key] for key in npzfile.files if key != 'gmted2010']
@@ -242,6 +251,8 @@ class BSDDBuilder:
         with open(self.root / Yfile, 'rb') as f:
             npzfile = np.load(f)
             Y = npzfile['target']
+        X = torch.tensor(X)
+        Y = torch.tensor(Y)
         return (X, Y)
 
     def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
