@@ -22,7 +22,7 @@ class TestRegion:
             top_left=Coordinate(20, 270),
             bottom_right=Coordinate(-55, 330),
             longitude_range=360)
-        assert r1.get_latitudes() == (20, -55)
+        assert r1.get_latitudes() == (-55, 20)
         assert r1.get_longitudes() == (270, 330)
 
     def test_invalid_longitude_range(self):
