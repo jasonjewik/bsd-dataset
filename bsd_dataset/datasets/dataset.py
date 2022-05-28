@@ -253,12 +253,20 @@ class BSDDBuilder:
         # Get target data
         target_data = defaultdict(dict)
         dstdir = self.target_dstdir
+        
         if self.target_dataset.dataset == 'chirps':
             for spl in splits:
                 chirps_data, chirps_lats, chirps_lons = self.extract_chirps_data(spl, dstdir)
                 target_data[spl]['target'] = chirps_data
                 target_data[spl]['lat'] = chirps_lats
                 target_data[spl]['lon'] = chirps_lons
+        
+        if self.target_dataset.dataset == 'persiann-cdr':
+            for spl in splits:
+                persiann_data, persiann_lats, persiann_lons = self.extract_persiann_data(spl, dstdir)
+                target_data[spl]['target'] = persiann_data
+                target_data[spl]['lat'] = persiann_lats
+                target_data[spl]['lon'] = persiann_lons
         
         # Save to disk
         for spl in splits:
@@ -275,7 +283,7 @@ class BSDDBuilder:
         dataset = BSDD(X, X_meta, Y, Y_meta, transform, target_transform, self.device)
         return dataset
 
-    def load_XY(self, Xfile, Yfile) -> Tuple[torch.Tensor, torch.Tensor]:
+    def load_XY(self, Xfile, Yfile) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         with open(self.root / Xfile, 'rb') as f:
             npzfile = np.load(f)
             arrs = []
@@ -364,7 +372,7 @@ class BSDDBuilder:
         for start, end in [self.train_dates, self.val_dates, self.test_dates]:
             start_time = np.datetime64(start)
             end_time = np.datetime64(end)
-            if persiann_start < start_time < end_time < persiann_end:
+            if persiann_start <= start_time <= end_time <= persiann_end:
                 pass
             else:
                 raise ValueError(
@@ -432,7 +440,9 @@ class BSDDBuilder:
                 lon=slice(*lons))  # TODO @jasonjewik: investigate
             npdata = xdata.values  # time x lat x lon
             this_lats = xdata.lat.values
-            this_lons = xdata.lon.values            
+            this_lons = xdata.lon.values
+            # Convert lons from [0, 360] to [-180, 180]
+            this_lons -= 180
             result.append((vn, (npdata, this_lats, this_lons)))
         return result
 
@@ -462,4 +472,23 @@ class BSDDBuilder:
         npdata = xdata.values  # time x lat x lon
         this_lats = xdata.latitude.values
         this_lons = xdata.longitude.values
+        return (npdata, this_lats, this_lons)
+    
+    def extract_persiann_data(self, split: str, src: Path) -> np.ndarray:
+        dates = getattr(self, f'{split}_dates')
+        region = getattr(self, f'{split}_region')
+        lons = region.get_longitudes(360)
+        lats = region.get_latitudes()
+        ds = xr.open_mfdataset(str(src / '*.nc'))
+        # Put latitudes into ascending order
+        ds = ds.reindex(lat=ds.lat[::-1])
+        xdata = ds.precipitation.sel(
+            time=slice(*dates),
+            lat=slice(*lats),
+            lon=slice(*lons))
+        # Drop leap days 
+        xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
+        npdata = xdata.values  # time x lat x lon
+        this_lats = xdata.lat.values
+        this_lons = xdata.lon.values
         return (npdata, this_lats, this_lons)
