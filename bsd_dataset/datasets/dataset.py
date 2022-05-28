@@ -204,14 +204,23 @@ class BSDDBuilder:
         # TODO @jasonjewik: include auxiliary information like latitude, longitude, and date
 
         # Get the GMTED2010 data
-        gmted2010_data = dict()
-        for spl in splits:
-            gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
+        gmted_present = False
+        for ds in self.input_datasets:            
+            if ds.dataset == 'gmted2010':
+                gmted_present = True
+        
+        if gmted_present:
+            gmted2010_data = dict()
+            for spl in splits:
+                gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
 
         # Save separately to save room on disk, scaling and concatenation can happen later
         for spl in splits:
             with open(self.root / f'{spl}_x.npz', 'wb') as f:
-                np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
+                if gmted_present:
+                    np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
+                else:
+                    np.savez(f, **cds_data[spl])
 
         # Get target data
         target_data = dict()
