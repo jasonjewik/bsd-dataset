@@ -1,20 +1,20 @@
 import os
 import time
+import yaml
+import wandb
 import torch
+import pickle
 import argparse
 import numpy as np
 
-from torch.utils.data import DataLoader
 from tqdm import tqdm
-import yaml
 from attrdict import AttrDict
-import wandb
-import pickle
+from torch.utils.data import DataLoader
 
-from models.convlnp import CONVLNP
-from clidow import ClimateDataset
+from models.convcnp import ConvCNP
+from models.convlnp import ConvLNP
 
-from utils.metrics import correlations, mae, mean_bias
+from bsd_dataset.evaluation.metrics import correlations, mae, mean_bias
 from utils.paths import results_path, datasets_path, evalsets_path
 from utils.misc import load_module
 from utils.log import get_logger, RunningAverage
@@ -65,7 +65,6 @@ def main():
 
     args.root = os.path.join(results_path, args.model, args.expid)
 
-    model_cls = getattr(load_module(f"models/{args.model}.py"), args.model.upper())
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
         args.config = config
