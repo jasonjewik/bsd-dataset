@@ -21,10 +21,6 @@ from bsd_dataset.datasets.download_utils import (
     download_urls, 
     multidownload_from_cds,     
 )
-from bsd_dataset.datasets.dataset_utils import (
-    get_shape_of_largest_array, 
-    match_array_shapes,
-)
 
 class BSDD(torch.utils.data.Dataset):
 
@@ -47,9 +43,9 @@ class BSDD(torch.utils.data.Dataset):
         self.device = device
 
     def __len__(self) -> int:
-        return self.X.shape[0]
+        return len(self.X)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         x = self.X[idx]
         if self.transform:
             x = self.transform(x)
