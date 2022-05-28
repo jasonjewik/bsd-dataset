@@ -6,6 +6,7 @@ import re
 import tarfile
 from typing import List, Optional, Tuple, Union
 from typing_extensions import Self
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
@@ -182,8 +183,7 @@ class BSDDBuilder:
             self.input_dstdirs + target_dstdirs,
             n_workers=5
         )
-        multidownload_from_cds(self.cds_api_requests, n_workers=5)
-        self.extract_cds_targz()
+        multidownload_from_cds(self.cds_api_requests, n_workers=5)        
         return self
         
     def extract(self) -> Self:
@@ -193,7 +193,8 @@ class BSDDBuilder:
         
         splits = ['train', 'val', 'test']
 
-        # Get the CDS data        
+        # Get the CDS data
+        self.extract_cds_zipped()
         cds_data = defaultdict(dict)
         for spl, direc in product(splits, self.cds_dstdirs):
             data_src = direc.name
@@ -353,19 +354,26 @@ class BSDDBuilder:
 
         return urls
 
-    def extract_cds_targz(self) -> None:
+    def extract_cds_zipped(self) -> None:
         for req in self.cds_api_requests:
             src = req.output
-            with tarfile.open(src) as tar:
-                dir_path = src.parent / src.name.split('.')[1]
-                tar.extractall(path=dir_path)
+            dir_path = src.parent / src.name.split('.')[1]
+            if src.suffix == '.tgz':
+                with tarfile.open(src) as tar:        
+                    tar.extractall(path=dir_path)
+            if src.suffix == '.zip':
+                with ZipFile(src) as zipfile:
+                    zipfile.extractall(path=dir_path)
 
     def extract_cds_data(self, split: str, src_dir: Path) -> List[Tuple[str, np.ndarray]]:
         region = getattr(self, f'{split}_region')
         dates = getattr(self, f'{split}_dates')
         lons = region.get_longitudes(360)
         lats = region.get_latitudes()
-        var_names = [x.split('_')[0] for x in os.listdir(src_dir)]
+        var_names = []
+        for fname in os.listdir(src_dir):
+            if Path(fname).suffix == '.nc':
+                var_names.append(fname.split('_')[0])
         result = []
         for vn in var_names:
             ds = xr.open_mfdataset(str(src_dir / f'{vn}*.nc'))
