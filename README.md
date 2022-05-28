@@ -2,9 +2,9 @@
 
 The Big Statistical Downscaling (BSD) Dataset.
 
-## Downloading data with the BSD Package
+## Usage
 
-WIP.
+See `demo.ipynb`.
 
 ## Using a Custom Region
 

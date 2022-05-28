@@ -44,8 +44,14 @@ class Region:
         else:
             self.name = name
 
-    def __repr__(self):
-        return f'Name: {self.name}\nTop left: {self.top_left}\nBottom right: {self.bottom_right}'
+    def __str__(self):
+        result = (
+            f'Name: {self.name}\n'
+            f'Top left: {self.top_left}\n'
+            f'Bottom right: {self.bottom_right}\n'
+            f'Longitude range: {self.longitude_range}'
+        )
+        return result
 
     def lon180_to_lon360(self, lon: float) -> float:
         return (lon + 360) % 360
@@ -88,13 +94,13 @@ class Region:
         return new_region
 
     def get_latitudes(self) -> Tuple[float, float]:
-        return tuple([self.top_left.latitude, self.bottom_right.latitude])
+        return tuple(sorted([self.top_left.latitude, self.bottom_right.latitude]))
 
     def get_longitudes(self, out_longitude_range: Optional[int] = None) -> Tuple[float, float]:
         lons = [self.top_left.longitude, self.bottom_right.longitude]
         if out_longitude_range is None:
             # Return the longitude coordinates in their original range.
-            return tuple(lons)
+            return tuple(sorted(lons))
         elif out_longitude_range != 180 and out_longitude_range != 360:
             raise ValueError(f'out longitude range must be 180 or 360')
         elif self.longitude_range == 360 and out_longitude_range == 180:
@@ -105,7 +111,7 @@ class Region:
             # Stored longitudes are in [-180, 180] but the user wants them in
             # [0, 360].
             lons = [self.lon180_to_lon360(lon) for lon in lons]
-        return tuple(lons)
+        return tuple(sorted(lons))
 
 
 # Pre-defined regions that roughly match CORDEX domains.
