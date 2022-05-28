@@ -4,8 +4,9 @@ from pathlib import Path
 import os
 import re
 import tarfile
-from typing import List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Self
+from zipfile import ZipFile
 
 import numpy as np
 import pandas as pd
@@ -20,44 +21,71 @@ from bsd_dataset.datasets.download_utils import (
     download_urls, 
     multidownload_from_cds,     
 )
-from bsd_dataset.datasets.dataset_utils import (
-    get_shape_of_largest_array, 
-    match_array_shapes,
-)
 
 class BSDD(torch.utils.data.Dataset):
 
     def __init__(
         self,
         X: torch.Tensor,
+        X_meta: Dict[str, Any],
         Y: torch.Tensor,
+        Y_meta: Dict[str, Any],
         transform: Optional[torch.nn.Module] = None,
         target_transform: Optional[torch.nn.Module] = None,
         device: Union[str, torch.device] = 'cpu'
     ):
         self.X = X
+        self.X_meta = X_meta
         self.Y = Y
+        self.Y_meta = Y_meta
         self.transform = transform
         self.target_transform = target_transform
         self.device = device
 
     def __len__(self) -> int:
-        return self.X.shape[0]
+        return len(self.X)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
         x = self.X[idx]
         if self.transform:
-            x = self.transform(x)        
+            x = self.transform(x)
+
+        x_lats = self.X_meta['lat']
+        x_lons = self.X_meta['lon']
+        x_lats = np.repeat(x_lats[:, np.newaxis], len(x_lons), axis=1)
+        x_lons = np.repeat(x_lons[np.newaxis, :], len(x_lats), axis=0)
+        x_lats = torch.tensor(x_lats)
+        x_lons = torch.tensor(x_lons)
 
         y = self.Y[idx]
         if self.target_transform:
             y = self.target_transform(y)        
+
+        y_lats = self.X_meta['lat']
+        y_lons = self.X_meta['lon']
+        y_lats = np.repeat(y_lats[:, np.newaxis], len(y_lons), axis=1)
+        y_lons = np.repeat(y_lons[np.newaxis, :], len(y_lats), axis=0)
+        y_lats = torch.tensor(y_lats)
+        y_lons = torch.tensor(y_lons)
         
         x = x.to(self.device)
         y = y.to(self.device)
+
+        x_lats = x_lats.to(self.device)
+        x_lons = x_lons.to(self.device)
+        y_lats = y_lats.to(self.device)
+        y_lons = y_lons.to(self.device)
         mask = torch.isnan(y)
+
+        info = {
+            'x_lat': x_lats,
+            'x_lon': x_lons,
+            'y_lat': y_lats,
+            'y_lon': y_lons,
+            'y_mask': mask
+        }
         
-        return x, y, mask
+        return x, y, info
 
 class BSDDBuilder:
 
@@ -182,8 +210,7 @@ class BSDDBuilder:
             self.input_dstdirs + target_dstdirs,
             n_workers=5
         )
-        multidownload_from_cds(self.cds_api_requests, n_workers=5)
-        self.extract_cds_targz()
+        multidownload_from_cds(self.cds_api_requests, n_workers=5)        
         return self
         
     def extract(self) -> Self:
@@ -193,36 +220,50 @@ class BSDDBuilder:
         
         splits = ['train', 'val', 'test']
 
-        # Get the CDS data        
+        # Get the CDS data
+        self.extract_cds_zipped()
         cds_data = defaultdict(dict)
         for spl, direc in product(splits, self.cds_dstdirs):
             data_src = direc.name
             this_data = self.extract_cds_data(spl, direc)
-            for var_name, data in this_data:
-                cds_data[spl][f'{data_src}:{var_name}'] = data
-        # TODO @jasonjewik: include auxiliary information like latitude, longitude, and date
+            for var_name, (data, lat, lon) in this_data:
+                cds_data[spl][f'{data_src}:{var_name}:data'] = data
+                cds_data[spl]['lat'] = lat
+                cds_data[spl]['lon'] = lon
 
         # Get the GMTED2010 data
-        gmted2010_data = dict()
-        for spl in splits:
-            gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
+        gmted_present = False
+        for ds in self.input_datasets:            
+            if ds.dataset == 'gmted2010':
+                gmted_present = True
+        
+        if gmted_present:
+            gmted2010_data = dict()
+            for spl in splits:
+                gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
 
         # Save separately to save room on disk, scaling and concatenation can happen later
         for spl in splits:
             with open(self.root / f'{spl}_x.npz', 'wb') as f:
-                np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
+                if gmted_present:
+                    np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
+                else:
+                    np.savez(f, **cds_data[spl])
 
         # Get target data
-        target_data = dict()
+        target_data = defaultdict(dict)
         dstdir = self.target_dstdir
         if self.target_dataset.dataset == 'chirps':
             for spl in splits:
-                target_data[spl] = self.extract_chirps_data(spl, dstdir)
+                chirps_data, chirps_lats, chirps_lons = self.extract_chirps_data(spl, dstdir)
+                target_data[spl]['target'] = chirps_data
+                target_data[spl]['lat'] = chirps_lats
+                target_data[spl]['lon'] = chirps_lons
         
         # Save to disk
         for spl in splits:
             with open(self.root / f'{spl}_y.npz', 'wb') as f:
-                np.savez(f, target=target_data[spl])
+                np.savez(f, **target_data[spl])
 
         return self
 
@@ -230,14 +271,17 @@ class BSDDBuilder:
         splits = ['train', 'val', 'test']
         if split not in splits:
             raise ValueError(f'Split {split} not recognized\nMust be of {splits}')
-        X, Y = self.load_XY(f'{split}_x.npz', f'{split}_y.npz')
-        dataset = BSDD(X, Y, transform, target_transform, self.device)
+        X, X_meta, Y, Y_meta = self.load_XY(f'{split}_x.npz', f'{split}_y.npz')
+        dataset = BSDD(X, X_meta, Y, Y_meta, transform, target_transform, self.device)
         return dataset
 
     def load_XY(self, Xfile, Yfile) -> Tuple[torch.Tensor, torch.Tensor]:
         with open(self.root / Xfile, 'rb') as f:
             npzfile = np.load(f)
-            arrs = [npzfile[key] for key in npzfile.files if key != 'gmted2010']
+            arrs = []
+            for key in npzfile.files:
+                if key not in ('gtmed2010', 'lat', 'lon'):
+                    arrs.append(npzfile[key])
             if 'gmted2010' in npzfile.files:
                 # TODO @jasonjewik: verify each array in the file has the same number of days
                 n_days = arrs[0].shape[0]
@@ -245,15 +289,21 @@ class BSDDBuilder:
                 gmted2010 = np.expand_dims(gmted2010, 0)
                 gmted2010 = np.repeat(gmted2010, n_days, axis=0)
                 arrs.append(gmted2010)
-            shape = get_shape_of_largest_array(arrs)
-            new_arrs = match_array_shapes(arrs, shape)
-            X = np.stack(new_arrs, axis=1)  # days x channel x lon x lat
+            # shape = get_shape_of_largest_array(arrs)
+            # new_arrs = match_array_shapes(arrs, shape)
+            X = np.stack(arrs, axis=1)  # days x channel x lon x lat
+            lats = npzfile['lat']
+            lons = npzfile['lon']
+            X_meta = {'lat': lats, 'lon': lons}
         with open(self.root / Yfile, 'rb') as f:
             npzfile = np.load(f)
             Y = npzfile['target']
+            lats = npzfile['lat']
+            lons = npzfile['lon']
+            Y_meta = {'lat': lats, 'lon': lons}
         X = torch.tensor(X)
         Y = torch.tensor(Y)
-        return (X, Y)
+        return (X, X_meta, Y, Y_meta)
 
     def get_gmted2010_url(self, ds_req: DatasetRequest) -> str:
         resolutions = [0.0625, 0.125, 0.25, 0.5, 0.75, 1]
@@ -353,19 +403,26 @@ class BSDDBuilder:
 
         return urls
 
-    def extract_cds_targz(self) -> None:
+    def extract_cds_zipped(self) -> None:
         for req in self.cds_api_requests:
             src = req.output
-            with tarfile.open(src) as tar:
-                dir_path = src.parent / src.name.split('.')[1]
-                tar.extractall(path=dir_path)
+            dir_path = src.parent / src.name.split('.')[1]
+            if src.suffix == '.tgz':
+                with tarfile.open(src) as tar:        
+                    tar.extractall(path=dir_path)
+            if src.suffix == '.zip':
+                with ZipFile(src) as zipfile:
+                    zipfile.extractall(path=dir_path)
 
     def extract_cds_data(self, split: str, src_dir: Path) -> List[Tuple[str, np.ndarray]]:
         region = getattr(self, f'{split}_region')
         dates = getattr(self, f'{split}_dates')
         lons = region.get_longitudes(360)
         lats = region.get_latitudes()
-        var_names = [x.split('_')[0] for x in os.listdir(src_dir)]
+        var_names = []
+        for fname in os.listdir(src_dir):
+            if Path(fname).suffix == '.nc':
+                var_names.append(fname.split('_')[0])
         result = []
         for vn in var_names:
             ds = xr.open_mfdataset(str(src_dir / f'{vn}*.nc'))
@@ -374,8 +431,9 @@ class BSDDBuilder:
                 lat=slice(*lats),
                 lon=slice(*lons))  # TODO @jasonjewik: investigate
             npdata = xdata.values  # time x lat x lon
-            npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-            result.append((vn, npdata))
+            this_lats = xdata.lat.values
+            this_lons = xdata.lon.values            
+            result.append((vn, (npdata, this_lats, this_lons)))
         return result
 
     def extract_gmted2010_data(self, split: str, src: Path) -> np.ndarray:
@@ -402,5 +460,6 @@ class BSDDBuilder:
         # Drop leap days since CDS datasets don't have those
         xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
         npdata = xdata.values  # time x lat x lon
-        npdata = np.moveaxis(npdata, 1, 2)  # time x lon x lat
-        return npdata
+        this_lats = xdata.latitude.values
+        this_lons = xdata.longitude.values
+        return (npdata, this_lats, this_lons)

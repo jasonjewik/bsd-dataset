@@ -235,7 +235,7 @@ class CDSAPIRequestBuilder:
                 all_vars.remove('surface_solar_radiation_downwards')
                 all_vars.remove('daily_near_surface_relative_humidity')
         
-        if dataset == 'cmip6-projections':
+        if dataset == 'projections-cmip6':
             all_vars = [
                 'daily_maximum_near_surface_air_temperature',
                 'daily_minimum_near_surface_air_temperature',

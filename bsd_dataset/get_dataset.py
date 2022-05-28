@@ -22,15 +22,7 @@ def get_dataset(
     cds_uid: Optional[str] = None,
     cds_key: Optional[str] = None,
     device: str = 'cpu'
-) -> BSDDBuilder:
-
-    # Check for CDS 
-    helper = CDSAPICredentialHelper()
-    if not helper.parse_config() or cds_uid and cds_key:
-        if cds_uid is None and cds_key is None:
-            helper.setup_cli()
-        else:
-            helper.setup(cds_uid, cds_key)
+) -> BSDDBuilder:    
 
     # Construct builder
     builder = BSDDBuilder(
@@ -48,7 +40,15 @@ def get_dataset(
     builder.prepare_download_requests()
 
     if download:
+        # Check for CDS        
+        helper = CDSAPICredentialHelper()
+        if not helper.parse_config() or cds_uid and cds_key:
+            if cds_uid is None and cds_key is None:
+                helper.setup_cli()
+            else:
+                helper.setup(cds_uid, cds_key)
         builder.download()
+        
     if extract:
         builder.extract()
 
