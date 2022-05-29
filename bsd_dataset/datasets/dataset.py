@@ -15,6 +15,7 @@ import xarray as xr
 
 import bsd_dataset
 from bsd_dataset.regions import Region
+from bsd_dataset.datasets.dataset_utils import get_lon_mask
 from bsd_dataset.datasets.download_utils import (
     DatasetRequest,
     CDSAPIRequestBuilder,
@@ -434,10 +435,17 @@ class BSDDBuilder:
         result = []
         for vn in var_names:
             ds = xr.open_mfdataset(str(src_dir / f'{vn}*.nc'))
+            # If the top-left has a longitude greater than the bottom-left, we have to 
+            # use a mask (e.g., TL: 350, BR: 40 does not mean we want 40 to 350 degrees),
+            # but we want to wrap the other way around the globe from 350 to 40 degrees.
+            if lons[0] > lons[1]:
+                lon_slice = get_lon_mask(ds.lon, lons)
+            else:
+                lon_slice = slice(*lons)
             xdata = getattr(ds, vn).sel(
                 time=slice(*dates),
-                lat=slice(*lats),
-                lon=slice(*lons))  # TODO @jasonjewik: investigate
+                lat=slice(*sorted(lats)),
+                lon=lon_slice)
             npdata = xdata.values  # time x lat x lon
             this_lats = xdata.lat.values
             this_lons = xdata.lon.values
@@ -452,7 +460,7 @@ class BSDDBuilder:
         lats = region.get_latitudes()
         ds = xr.open_mfdataset(str(src / '*.nc'))
         xdata = ds.elevation.sel(
-            latitude=slice(*lats), 
+            latitude=slice(*sorted(lats)), 
             longitude=slice(*lons))
         npdata = xdata.values.T  # lon x lat
         return npdata
@@ -465,7 +473,7 @@ class BSDDBuilder:
         ds = xr.open_mfdataset(str(src / '*.nc'))
         xdata = ds.precip.sel(
             time=slice(*dates),
-            latitude=slice(*lats), 
+            latitude=slice(*sorted(lats)), 
             longitude=slice(*lons))
         # Drop leap days since CDS datasets don't have those
         xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
@@ -484,7 +492,7 @@ class BSDDBuilder:
         ds = ds.reindex(lat=ds.lat[::-1])
         xdata = ds.precipitation.sel(
             time=slice(*dates),
-            lat=slice(*lats),
+            lat=slice(*sorted(lats)),
             lon=slice(*lons))
         # Drop leap days 
         xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
