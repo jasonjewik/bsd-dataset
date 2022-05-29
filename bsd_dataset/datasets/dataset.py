@@ -62,8 +62,8 @@ class BSDD(torch.utils.data.Dataset):
         if self.target_transform:
             y = self.target_transform(y)        
 
-        y_lats = self.X_meta['lat']
-        y_lons = self.X_meta['lon']
+        y_lats = self.Y_meta['lat']
+        y_lons = self.Y_meta['lon']
         y_lats = np.repeat(y_lats[:, np.newaxis], len(y_lons), axis=1)
         y_lons = np.repeat(y_lons[np.newaxis, :], len(y_lats), axis=0)
         y_lats = torch.tensor(y_lats)
@@ -490,13 +490,21 @@ class BSDDBuilder:
         ds = xr.open_mfdataset(str(src / '*.nc'))
         # Put latitudes into ascending order
         ds = ds.reindex(lat=ds.lat[::-1])
+        # If the top-left has a longitude greater than the bottom-left, we have to 
+        # use a mask (e.g., TL: 350, BR: 40 does not mean we want 40 to 350 degrees),
+        # but we want to wrap the other way around the globe from 350 to 40 degrees.
+        if lons[0] > lons[1]:
+            lon_slice = get_lon_mask(ds.lon, lons)
+        else:
+            lon_slice = slice(*lons)
         xdata = ds.precipitation.sel(
             time=slice(*dates),
             lat=slice(*sorted(lats)),
-            lon=slice(*lons))
+            lon=lon_slice)
         # Drop leap days 
         xdata = xdata.sel(time=~((xdata.time.dt.month == 2) & (xdata.time.dt.day == 29)))
-        npdata = xdata.values  # time x lat x lon
+        npdata = xdata.values  # time x lon x lat
+        npdata = np.moveaxis(npdata, 1, 2)  # time x lat x lon
         this_lats = xdata.lat.values
         this_lons = xdata.lon.values
         return (npdata, this_lats, this_lons)

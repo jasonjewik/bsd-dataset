@@ -120,10 +120,13 @@ class Region:
 # longitude lines, but here we define rectangular-shaped regions purely using
 # top left and bottom right coordinates for simplicity.
 
+# Also, latitudes are cut off at 50 and -50 because these are the spatial bounds of
+# CHIRPS, one of our target datasets. The non-cut-off values are commented out.
+
 SouthAmerica = Region(
         name='South America',
         top_left=Coordinate(20, 270),
-        bottom_right=Coordinate(-55, 330),
+        bottom_right=Coordinate(-50, 330),  # -55
         longitude_range=360)
 
 CentralAmerica = Region(
@@ -134,13 +137,13 @@ CentralAmerica = Region(
     
 NorthAmerica = Region(
     name='North America',
-    top_left=Coordinate(65, 220),
+    top_left=Coordinate(50, 220),  # 65
     bottom_right=Coordinate(15, 300),
     longitude_range=360)
     
 Europe = Region(
     name='Europe',
-    top_left=Coordinate(65, 350),
+    top_left=Coordinate(50, 350),  #65
     bottom_right=Coordinate(30, 40),
     longitude_range=360)
 
@@ -158,13 +161,13 @@ SouthAsia = Region(
 
 EastAsia = Region(
     name='East Asia',
-    top_left=Coordinate(55, 70),
+    top_left=Coordinate(50, 70),  # 65
     bottom_right=Coordinate(5, 150),
     longitude_range=360)
 
 CentralAsia = Region(
     name='Central Asia',
-    top_left=Coordinate(60, 40),
+    top_left=Coordinate(50, 40),  # 60
     bottom_right=Coordinate(20, 120),
     longitude_range=360)
 
@@ -176,7 +179,7 @@ Australasia = Region(
 
 Mediterranean = Region(
     name='Mediterranean',
-    top_left=Coordinate(55, 345),
+    top_left=Coordinate(50, 345),  # 55
     bottom_right=Coordinate(25, 45),
     longitude_range=360)
 
