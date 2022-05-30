@@ -17,6 +17,7 @@ from .parser import parse_args
 from .train import train
 from .evaluate import evaluate
 from .data import load as load_dataloaders
+from .model import load as load_model
 from .optimizer import load as load_optimizer
 from .scheduler import load as load_scheduler
 from .logger import Logger
@@ -48,9 +49,9 @@ def worker(rank, options, logger):
         dist.init_process_group(backend = options.distributed_backend, init_method = f"tcp://{options.address}:{options.port}", world_size = options.nprocs, rank = options.rank)
         options.batch_size = options.batch_size // options.nprocs
 
-    dataloaders = load_dataloaders(options, input_shape = input_shape, output_shape = output_shape, model_config = options.model_config)
+    dataloaders, input_shape, target_shape = load_dataloaders(options)
 
-    model = load_model(model = options.model)
+    model = load_model(model = options.model, input_shape = input_shape, target_shape = target_shape, model_config = options.model_config)
 
     if(options.device == "cpu"):
         model.float()
@@ -86,7 +87,7 @@ def worker(rank, options, logger):
         wandb.run.name = options.name
         wandb.save(os.path.join(options.log_dir_path, "params.txt"))
 
-    evaluate(start_epoch, model, processor, data, options)
+    # evaluate(start_epoch, model, data, options)
 
     if(dataloaders["train"] is not None):
         options.checkpoints_dir_path = os.path.join(options.log_dir_path, "checkpoints")
@@ -100,13 +101,13 @@ def worker(rank, options, logger):
                 logging.info(f"Starting epoch {epoch}")
 
             start = time.time()
-            train(epoch, model, data, optimizer, scheduler, scaler, options)
+            train(epoch, model, dataloaders, optimizer, scheduler, scaler, options)
             end = time.time()
 
             if(options.master): 
                 logging.info(f"Finished epoch {epoch} in {end - start:.3f} seconds")
 
-            metrics = evaluate(epoch, model, processor, data, options)
+            metrics = evaluate(epoch, model, data, options)
 
             if(options.master):
                 checkpoint = {"epoch": epoch, "name": options.name, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict()}

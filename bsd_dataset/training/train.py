@@ -20,7 +20,7 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
 
         optimizer.zero_grad()
         
-        context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2].to(options.device)
+        context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
         predictions = model(context)
 
         with autocast():

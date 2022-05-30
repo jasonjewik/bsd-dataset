@@ -1,9 +1,10 @@
 from ..models import *
 
 def load(model, **kwargs):
-    if(model == "ConvNet1"):
-        return ConvNet1(input_shape = kwargs["input_shape"], output_shape = kwargs["output_shape"])
-    if(model == "ConvNet2"):
-        return ConvNet2(input_shape = kwargs["input_shape"], output_shape = kwargs["output_shape"])
-    if(model == "ConvNet3"):
-        return ConvNet3(input_shape = kwargs["input_shape"], output_shape = kwargs["output_shape"])
+    if(model == "ConvNet"):
+        return ConvNet(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"])
+    if(model == "GaussianConvNet"):
+        return GaussianConvNet(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"])
+    if(model == "GammaConvNet"):
+        return GammaConvNet(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"])
+    raise Exception(f"Model {model} is not supported")

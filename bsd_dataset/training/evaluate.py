@@ -50,7 +50,7 @@ def get_test_metrics(model, dataloader, options):
     
     logging.info("Finished testing")
 
-    return metrics = {}
+    return metrics
 
 def evaluate(epoch, model, data, options):
     metrics = {}

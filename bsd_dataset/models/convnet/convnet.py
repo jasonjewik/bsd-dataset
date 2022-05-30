@@ -4,9 +4,8 @@ import torch.nn as nn
 from typing import Type, Union, List, Tuple, Optional
 
 __all__ = [
-    "ConvNet1",
-    "ConvNet2",
-    "ConvNet3",
+    "ConvNet",
+    "GaussianConvNet",
 ]
 
 class Bottleneck(nn.Module):
@@ -79,8 +78,8 @@ class BottleneckTranspose(nn.Module):
 
         return output
 
-class ConvNet(nn.Module):
-    def __init__(self, input_shape: List[int], output_shape: List[int], num_blocks: List[int]) -> None:
+class _ConvNet(nn.Module):
+    def __init__(self, input_shape: List[int], target_shape: List[int], num_blocks: List[int]) -> None:
         super().__init__()
         self.layer1 = self.make(block = Bottleneck, in_channels = input_shape[0], out_channels = 64, num_blocks = num_blocks[0])
         self.layer2 = self.make(block = Bottleneck, in_channels = 64 * Bottleneck.expansion, out_channels = 128, num_blocks = num_blocks[1], stride = 2)
@@ -91,16 +90,16 @@ class ConvNet(nn.Module):
         self.layer7 = self.make(block = BottleneckTranspose, in_channels = 128 * BottleneckTranspose.expansion, out_channels = 64, num_blocks = num_blocks[1], stride = 2)
         self.layer8 = self.make(block = BottleneckTranspose, in_channels = 64 * BottleneckTranspose.expansion, out_channels = 64, num_blocks = num_blocks[0])
 
-        count = math.ceil(math.log(max(output_shape[1] / input_shape[1], output_shape[2] / input_shape[2]), 2))
+        count = math.ceil(math.log(max(target_shape[1] / input_shape[1], target_shape[2] / input_shape[2]), 2))
         layers = []
         for _ in range(count): 
             layers.append(self.make(block = BottleneckTranspose, in_channels = 64 * Bottleneck.expansion, out_channels = 64, num_blocks = num_blocks[0], stride = 2))
         self.upsample = nn.ModuleList(layers)
         
-        self.conv = nn.Conv2d(in_channels = 64 * Bottleneck.expansion, out_channels = output_shape[0], kernel_size = 1, stride = 1, bias = False)
-        self.bn = nn.BatchNorm2d(num_features = output_shape[0])
+        self.conv = nn.Conv2d(in_channels = 64 * Bottleneck.expansion, out_channels = target_shape[0], kernel_size = 1, stride = 1, bias = False)
+        self.bn = nn.BatchNorm2d(num_features = target_shape[0])
 
-        self.avgpool = nn.AdaptiveAvgPool2d((output_shape[1], output_shape[2])) 
+        self.avgpool = nn.AdaptiveAvgPool2d((target_shape[1], target_shape[2])) 
 
         for module in self.modules():
             if(isinstance(module, (nn.Conv2d, nn.ConvTranspose2d))):
@@ -128,15 +127,11 @@ class ConvNet(nn.Module):
         x = self.conv(x)
         x = self.bn(x)
         x = self.avgpool(x)
-        return x
+        return x.squeeze(1)
 
-def ConvNet1(input_shape, output_shape) -> ConvNet:
-    return ConvNet(input_shape = input_shape, output_shape = output_shape, num_blocks = [1, 2, 3, 2])
+def ConvNet(input_shape, target_shape) -> _ConvNet:
+    return _ConvNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [1, 3, 6, 3])
 
-def ConvNet2(input_shape, output_shape) -> ConvNet:
-    return ConvNet(input_shape = input_shape, output_shape = output_shape, num_blocks = [1, 3, 6, 3])
-
-def ConvNet3(input_shape, output_shape) -> ConvNet:
-    return ConvNet(input_shape = input_shape, output_shape = output_shape, num_blocks = [1, 4, 10, 4])
-
+def GaussianConvNet(input_shape, target_shape) -> _ConvNet:
+    return _ConvNet(input_shape = input_shape, target_shape = [2] + target_shape, num_blocks = [1, 3, 6, 3])
 

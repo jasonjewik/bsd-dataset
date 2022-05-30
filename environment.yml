@@ -3,10 +3,15 @@ channels:
 dependencies:
   - pip
   - pip:
+    - cdsapi
     - configobj
     - numpy
+    - pandas
     - regex
+    - scikit-image
     - torch
     - torchvision
     - tqdm
     - wandb
+    - wget
+    - xarray

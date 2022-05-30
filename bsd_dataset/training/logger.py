@@ -16,7 +16,7 @@ class Logger:
     def __init__(self, file):        
         self.queue = mp.Queue()
 
-        formatter = Formatter("%(asctime)s | %(message)s", datefmt = "%H:%M:%S")
+        formatter = Formatter("%(asctime)s | %(message)s", datefmt = "%Y-%m-%d::%H:%M:%S")
         
         file_handler = FileHandler(file, "w+")
         file_handler.setFormatter(formatter)
