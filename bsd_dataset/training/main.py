@@ -16,6 +16,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from .parser import parse_args
 from .train import train
 from .evaluate import evaluate
+from .data import load as load_dataloaders
 from .optimizer import load as load_optimizer
 from .scheduler import load as load_scheduler
 from .logger import Logger
@@ -47,6 +48,8 @@ def worker(rank, options, logger):
         dist.init_process_group(backend = options.distributed_backend, init_method = f"tcp://{options.address}:{options.port}", world_size = options.nprocs, rank = options.rank)
         options.batch_size = options.batch_size // options.nprocs
 
+    dataloaders = load_dataloaders(options)
+
     model = load_model(model = options.model)
 
     if(options.device == "cpu"):
@@ -55,14 +58,12 @@ def worker(rank, options, logger):
         model.to(options.device)
         if(options.distributed):
             model = DDP(model, device_ids = [options.device_ids[options.rank]])
-    
-    # data = load_data(options)
 
     optimizer = None
     scheduler = None
-    if(data["train"] is not None):        
+    if(dataloaders["train"] is not None):        
         optimizer = load_optimizer(model = model, lr = options.lr, beta1 = options.beta1, beta2 = options.beta2, eps = options.eps, weight_decay = options.weight_decay)
-        scheduler = load_scheduler(optimizer = optimizer, base_lr = options.lr, num_warmup_steps = options.num_warmup_steps, num_total_steps = len(data["train"]) * options.epochs)
+        scheduler = load_scheduler(optimizer = optimizer, base_lr = options.lr, num_warmup_steps = options.num_warmup_steps, num_total_steps = dataloaders["train"].num_batches * options.epochs)
 
     start_epoch = 0
     if(options.checkpoint is not None):
@@ -87,7 +88,7 @@ def worker(rank, options, logger):
 
     evaluate(start_epoch, model, processor, data, options)
 
-    if(data["train"] is not None):
+    if(dataloaders["train"] is not None):
         options.checkpoints_dir_path = os.path.join(options.log_dir_path, "checkpoints")
         os.makedirs(options.checkpoints_dir_path, exist_ok = True)
 

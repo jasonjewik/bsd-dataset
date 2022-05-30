@@ -1,42 +1,52 @@
 import os
 import torch
 import logging
+import configobj
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from bsd_dataset import get_dataset, regions, DatasetRequest
 
+def fixtypes(config):
+    for key, value in config.items():
+        if(isinstance(value, dict)):
+            fixtypes(value)
+        else:
+            if(key == "resolution"):
+                config[key] = float(value)
+            elif(key.endswith("_region")):
+                config[key] = eval(value)
+            elif(key.endswith("_dates")):
+                config[key] = tuple(value)
+            elif(key in ["download", "extract"]):
+                config[key] = bool(value)
+
 def get_datasets(options):
-    input_datasets = [DatasetRequest(
-        dataset = "projections-cmip5-daily-single-levels",
-        model="gfdl_cm3",
-        ensemble_member="r1i1p1",
-        variable=["mean_precipitation_flux", "2m_temperature"],
-    ),
+    if(not os.path.exists(options.dataset)):
+        raise Exception(f"Path does not exist: {options.dataset}")
 
-    DatasetRequest(
-       dataset="gmted2010",
-       resolution=0.25
-    )
-]
+    config = dict(configobj.ConfigObj(options.dataset))
+    fixtypes(config)
 
-    target_dataset = DatasetRequest(dataset="chirps", resolution=0.25)
+    input_datasets = [DatasetRequest(**kwargs) for kwargs in config["input_datasets"].values()]
+    target_dataset = DatasetRequest(**config["target_dataset"])
+    datasets = get_dataset(input_datasets, target_dataset, **config["get_dataset"]) 
 
-    dataset = get_dataset(input_datasets, target_dataset, train_region=regions.California, val_region=regions.California, test_region=regions.California, train_dates=("1990-01-01", "1990-12-31"), val_dates=("1991-01-01", "1991-12-31"), test_dates=("1992-01-01", "1992-12-31"), download = False, extract = True) 
-
-    train_dataset = dataset.get_split("train")
-    val_dataset = dataset.get_split("val")
-    test_dataset = dataset.get_split("test")
-
+    return datasets
 
 def get_dataloaders(options):
+    dataloaders = {}
 
-    train = (datatype == "train")
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, sampler = None)
-    dataloader.num_samples = len(dataset)
-    dataloader.num_batches = len(dataloader)
+    datasets = get_datasets(options)
+    for split in ["train", "val", "test"]:
+        dataset = datasets.get_split(split)
+        sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
+        dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = sample is None, drop_last = (split == "train"))
+        dataloader.num_samples = options.batch_size * len(dataloader) if (split == "train") else len(dataset)
+        dataloader.num_batches = len(dataloader)
+        dataloaders[split] = dataloader
 
-    return dataloader
+    return dataloaders
 
 def load(options):    
-    data = get_dataloaders(options)
-    return data
+    dataloaders = get_dataloaders(options)
+    return dataloaders
