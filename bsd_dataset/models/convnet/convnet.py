@@ -81,6 +81,8 @@ class BottleneckTranspose(nn.Module):
 class _ConvNet(nn.Module):
     def __init__(self, input_shape: List[int], target_shape: List[int], num_blocks: List[int]) -> None:
         super().__init__()
+        self.ln = nn.LayerNorm((input_shape[1], input_shape[2]))
+
         self.layer1 = self.make(block = Bottleneck, in_channels = input_shape[0], out_channels = 64, num_blocks = num_blocks[0])
         self.layer2 = self.make(block = Bottleneck, in_channels = 64 * Bottleneck.expansion, out_channels = 128, num_blocks = num_blocks[1], stride = 2)
         self.layer3 = self.make(block = Bottleneck, in_channels = 128 * Bottleneck.expansion, out_channels = 256, num_blocks = num_blocks[2], stride = 2)
@@ -100,11 +102,11 @@ class _ConvNet(nn.Module):
         self.bn = nn.BatchNorm2d(num_features = target_shape[0])
 
         self.avgpool = nn.AdaptiveAvgPool2d((target_shape[1], target_shape[2])) 
-
+        
         for module in self.modules():
             if(isinstance(module, (nn.Conv2d, nn.ConvTranspose2d))):
                 nn.init.kaiming_normal_(module.weight, mode = "fan_out", nonlinearity = "relu")
-            if(isinstance(module, nn.BatchNorm2d)):
+            if(isinstance(module, (nn.LayerNorm, nn.BatchNorm2d))):
                 nn.init.constant_(module.bias, 0)
                 nn.init.constant_(module.weight, 1)
 
@@ -114,23 +116,25 @@ class _ConvNet(nn.Module):
         return nn.ModuleList([head, tail])
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x1 = self.layer1[1](self.layer1[0](x))
+        x0 = self.ln(x)
+        x1 = self.layer1[1](self.layer1[0](x0))
         x2 = self.layer2[1](self.layer2[0](x1))
         x3 = self.layer3[1](self.layer3[0](x2))
         x4 = self.layer4[1](self.layer4[0](x3))
         x5 = self.layer5[1](self.layer5[0](x4, (x3.shape[-2], x3.shape[-1]))) + x3
         x6 = self.layer6[1](self.layer6[0](x5, (x2.shape[-2], x2.shape[-1]))) + x2
         x7 = self.layer7[1](self.layer7[0](x6, (x1.shape[-2], x1.shape[-1]))) + x1
-        x  = self.layer8[1](self.layer8[0](x7, (x.shape[-2], x.shape[-1])))
+        x  = self.layer8[1](self.layer8[0](x7, (x0.shape[-2], x0.shape[-1])))
         for layer in self.upsample:
             x = layer[1](layer[0](x, (2 * x.shape[-2], 2 * x.shape[-1])))
         x = self.conv(x)
         x = self.bn(x)
+        
         x = self.avgpool(x)
         return x.squeeze(1)
 
 def ConvNet(input_shape, target_shape) -> _ConvNet:
-    return _ConvNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [1, 3, 6, 3])
+    return _ConvNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [2, 2, 2, 2])
 
 def GaussianConvNet(input_shape, target_shape) -> _ConvNet:
     return _ConvNet(input_shape = input_shape, target_shape = [2] + target_shape, num_blocks = [1, 3, 6, 3])

@@ -15,19 +15,19 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
 
     start = time.time()
     for index, batch in enumerate(dataloader): 
-        step = dataloader.num_batches * epoch + index
+        step = dataloader.num_batches * (epoch - 1) + index
         scheduler(step)
 
         optimizer.zero_grad()
         
         context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
         predictions = model(context)
+        target = target.nan_to_num()
 
         with autocast():
-            loss = (criterion(predictions, target) * mask.float()).sum() / mask.sum()
+            loss = ((criterion(predictions, target) * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])).mean()
             scaler.scale(loss).backward()
             scaler.step(optimizer)
-        
         scaler.update()
 
         end = time.time()
