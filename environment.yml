@@ -1,0 +1,12 @@
+channels:
+  - defaults
+dependencies:
+  - pip
+  - pip:
+    - configobj
+    - numpy
+    - regex
+    - torch
+    - torchvision
+    - tqdm
+    - wandb
