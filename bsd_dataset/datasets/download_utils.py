@@ -247,6 +247,8 @@ class CDSAPIRequestBuilder:
             ]
             if model == 'gfdl_esm4':
                 pass
+            if model == 'fgoals_f3_l':
+                pass
             if model == 'ipsl_cm6a_lr':
                 all_vars.remove('near_surface_specific_humidity')
                 all_vars.remove('sea_level_pressure')
