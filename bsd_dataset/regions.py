@@ -94,13 +94,13 @@ class Region:
         return new_region
 
     def get_latitudes(self) -> Tuple[float, float]:
-        return tuple(sorted([self.top_left.latitude, self.bottom_right.latitude]))
+        return tuple([self.top_left.latitude, self.bottom_right.latitude])
 
     def get_longitudes(self, out_longitude_range: Optional[int] = None) -> Tuple[float, float]:
         lons = [self.top_left.longitude, self.bottom_right.longitude]
         if out_longitude_range is None:
             # Return the longitude coordinates in their original range.
-            return tuple(sorted(lons))
+            return tuple(lons)
         elif out_longitude_range != 180 and out_longitude_range != 360:
             raise ValueError(f'out longitude range must be 180 or 360')
         elif self.longitude_range == 360 and out_longitude_range == 180:
@@ -111,7 +111,7 @@ class Region:
             # Stored longitudes are in [-180, 180] but the user wants them in
             # [0, 360].
             lons = [self.lon180_to_lon360(lon) for lon in lons]
-        return tuple(sorted(lons))
+        return tuple(lons)
 
 
 # Pre-defined regions that roughly match CORDEX domains.
@@ -120,10 +120,13 @@ class Region:
 # longitude lines, but here we define rectangular-shaped regions purely using
 # top left and bottom right coordinates for simplicity.
 
+# Also, latitudes are cut off at 50 and -50 because these are the spatial bounds of
+# CHIRPS, one of our target datasets. The non-cut-off values are commented out.
+
 SouthAmerica = Region(
         name='South America',
         top_left=Coordinate(20, 270),
-        bottom_right=Coordinate(-55, 330),
+        bottom_right=Coordinate(-50, 330),  # -55
         longitude_range=360)
 
 CentralAmerica = Region(
@@ -134,13 +137,13 @@ CentralAmerica = Region(
     
 NorthAmerica = Region(
     name='North America',
-    top_left=Coordinate(65, 220),
+    top_left=Coordinate(50, 220),  # 65
     bottom_right=Coordinate(15, 300),
     longitude_range=360)
     
 Europe = Region(
     name='Europe',
-    top_left=Coordinate(65, 350),
+    top_left=Coordinate(50, 350),  #65
     bottom_right=Coordinate(30, 40),
     longitude_range=360)
 
@@ -158,13 +161,13 @@ SouthAsia = Region(
 
 EastAsia = Region(
     name='East Asia',
-    top_left=Coordinate(55, 70),
+    top_left=Coordinate(50, 70),  # 65
     bottom_right=Coordinate(5, 150),
     longitude_range=360)
 
 CentralAsia = Region(
     name='Central Asia',
-    top_left=Coordinate(60, 40),
+    top_left=Coordinate(50, 40),  # 60
     bottom_right=Coordinate(20, 120),
     longitude_range=360)
 
@@ -176,7 +179,7 @@ Australasia = Region(
 
 Mediterranean = Region(
     name='Mediterranean',
-    top_left=Coordinate(55, 345),
+    top_left=Coordinate(50, 345),  # 55
     bottom_right=Coordinate(25, 45),
     longitude_range=360)
 
