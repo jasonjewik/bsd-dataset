@@ -1,6 +1,6 @@
 import os
 import argparse
-import .utils.config as config
+import utils.config as config
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -9,6 +9,7 @@ def parse_args():
     parser.add_argument("--seed", type = int, default = 0, help = "Seed")
     parser.add_argument("--logs", type = str, default = os.path.join(config.root, "logs/"), help = "Logs path")
     parser.add_argument("--model", type = str, default = None, help = "Model name")
+    parser.add_argument("--model_config", type = str, default = None, help = "Path to model config file")
     parser.add_argument("--data", type = str, default = None, help = "Path to ini file")
     parser.add_argument("--device", type = str, default = None, choices = ["cpu", "gpu"], help = "Specify device")
     parser.add_argument("--device_id", type = int, default = 0, help = "Specify device id for single gpu training")

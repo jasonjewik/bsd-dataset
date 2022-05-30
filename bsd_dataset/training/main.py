@@ -48,7 +48,7 @@ def worker(rank, options, logger):
         dist.init_process_group(backend = options.distributed_backend, init_method = f"tcp://{options.address}:{options.port}", world_size = options.nprocs, rank = options.rank)
         options.batch_size = options.batch_size // options.nprocs
 
-    dataloaders = load_dataloaders(options)
+    dataloaders = load_dataloaders(options, input_shape = input_shape, output_shape = output_shape, model_config = options.model_config)
 
     model = load_model(model = options.model)
 
