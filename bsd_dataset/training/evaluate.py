@@ -3,6 +3,7 @@ import torch
 import logging
 import torch.nn as nn
 from tqdm import tqdm    
+from einops import rearrange
 
 def get_val_metrics(model, dataloader, options):
     logging.info("Started validation")
@@ -17,7 +18,18 @@ def get_val_metrics(model, dataloader, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            predictions = model(context)
+            
+            if options.model == 'PerceiverIO':
+                from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
+                input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
+                context = rearrange(context, 'b c h w -> b (h w) c')
+                X = torch.cat([context, input_pos_encoding], dim = -1)
+                target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
+                predictions = model(X, target_pos_encoding)
+                predictions = rearrange(predictions, 'b (h w) c -> b c h w', h = target.shape[1], w = target.shape[2]).squeeze()
+            else:
+                predictions = model(context)
+            
             loss = (criterion(predictions, target).nan_to_num() * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])
             losses.append(loss.sum())
 
@@ -41,7 +53,18 @@ def get_test_metrics(model, dataloader, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            predictions = model(context)
+            
+            if options.model == 'PerceiverIO':
+                from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
+                input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
+                context = rearrange(context, 'b c h w -> b (h w) c')
+                X = torch.cat([context, input_pos_encoding], dim = -1)
+                target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
+                predictions = model(X, target_pos_encoding)
+                predictions = rearrange(predictions, 'b (h w) c -> b c h w', h = target.shape[1], w = target.shape[2]).squeeze()
+            else:
+                predictions = model(context)
+            
             loss = (criterion(predictions, target).nan_to_num() * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])
             losses.append(loss.sum())
 

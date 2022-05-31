@@ -7,4 +7,6 @@ def load(model, **kwargs):
         return GaussianConvNet(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"])
     if(model == "GammaConvNet"):
         return GammaConvNet(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"])
+    if(model == 'PerceiverIO'):
+        return Perceiver(input_shape = kwargs["input_shape"], target_shape = kwargs["target_shape"], model_config = kwargs['model_config'])
     raise Exception(f"Model {model} is not supported")

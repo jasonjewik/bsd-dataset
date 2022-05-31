@@ -1,0 +1,31 @@
+address: 127.0.0.1
+backend: nccl
+batch_size: 16
+beta1: 0.9
+beta2: 0.999
+checkpoint: None
+data: bsd_dataset/configs/default_eu.ini
+device: cuda
+device_id: 2
+device_ids: None
+distributed: False
+epochs: 1
+eps: 1e-08
+generator: <torch._C.Generator object at 0x7f3cd635ec70>
+log_dir_path: /home/hbansal/bsd-dataset/bsd_dataset/logs/perceiver_test
+log_file_path: /home/hbansal/bsd-dataset/bsd_dataset/logs/perceiver_test/output.log
+logs: /home/hbansal/bsd-dataset/bsd_dataset/logs/
+lr: 0.0005
+model: PerceiverIO
+model_config: bsd_dataset/models/perceiver_io/perceiver_io.yml
+name: perceiver_test
+notes: None
+nprocs: 1
+num_warmup_steps: 100
+num_workers: 8
+port: 6100
+pretrained: False
+seed: 0
+wandb: False
+weight_decay: 0.1
+worker_init_fn: <function seeder.<locals>.worker_init_fn at 0x7f3bef723ef0>

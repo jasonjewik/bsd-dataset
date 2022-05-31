@@ -1,0 +1,12 @@
+- name:
+  - PERCEIVER_IO
+- details:
+  - cross_heads: 2
+    depth: 1
+    head_dim: 32
+    latent_dim: 64
+    latent_heads: 2
+    num_latents: 4
+    pos_encoding: 64
+    self_per_cross_attn: 2
+    weight_tie_layers: false

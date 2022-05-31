@@ -4,6 +4,7 @@ import torch
 import logging
 import torch.nn as nn
 from torch.cuda.amp import autocast
+from einops import rearrange
 
 def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
     dataloader = dataloaders["train"]
@@ -21,7 +22,18 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         optimizer.zero_grad()
         
         context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-        predictions = model(context)
+
+        if options.model == 'PerceiverIO':
+            from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
+            input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
+            context = rearrange(context, 'b c h w -> b (h w) c')
+            X = torch.cat([context, input_pos_encoding], dim = -1)
+            target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
+            predictions = model(X, target_pos_encoding)
+            predictions = rearrange(predictions, 'b (h w) c -> b c h w', h = target.shape[1], w = target.shape[2]).squeeze()
+        else:
+            predictions = model(context)
+
         target = target.nan_to_num()
 
         with autocast():
