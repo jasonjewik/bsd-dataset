@@ -10,22 +10,28 @@ def nan_to_num(t, mask=None):
 
 def rmse(y_pred, y_true):
     mse_loss = torch.nn.MSELoss()
-    y_pred = torch.tensor(y_pred)
-    y_true = torch.tensor(y_true)
+    if type(y_pred) == np.ndarray:
+        y_pred = torch.tensor(y_pred)
+    if type(y_true) == np.ndarray:
+        y_true = torch.tensor(y_true)
     y_pred = nan_to_num(y_pred, torch.isnan(y_true))
     y_true = nan_to_num(y_true)
     return torch.sqrt(mse_loss(y_pred, y_true))
 
 def bias(y_pred, y_true):
-    y_pred = torch.tensor(y_pred)
-    y_true = torch.tensor(y_true)
+    if type(y_pred) == np.ndarray:
+        y_pred = torch.tensor(y_pred)
+    if type(y_true) == np.ndarray:
+        y_true = torch.tensor(y_true)
     y_pred = nan_to_num(y_pred, torch.isnan(y_true))
     y_true = nan_to_num(y_true)
     return torch.sum(y_pred - y_true)
 
 def pearson_correlation_coefficient(y_pred, y_true):
-    y_pred = torch.tensor(y_pred)
-    y_true = torch.tensor(y_true)
+    if type(y_pred) == np.ndarray:
+        y_pred = torch.tensor(y_pred)
+    if type(y_true) == np.ndarray:
+        y_true = torch.tensor(y_true)
     y_pred = nan_to_num(y_pred, torch.isnan(y_true))
     y_true = nan_to_num(y_true)
     y_pred = pd.DataFrame(y_pred)
