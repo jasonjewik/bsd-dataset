@@ -18,9 +18,9 @@ def get_val_metrics(model, dataloader, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            # target = target.nan_to_num()
-            # target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
-            # context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
+            target = target.nan_to_num()
+            target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
+            context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
 
             if(options.model == "PerceiverIO"):
                 from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
