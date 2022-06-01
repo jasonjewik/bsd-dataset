@@ -25,16 +25,7 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
         context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
 
-        if(options.model == "PerceiverIO"):
-            from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
-            input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
-            context = rearrange(context, "b c h w -> b (h w) c")
-            X = torch.cat([context, input_pos_encoding], dim = -1)
-            target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
-            predictions = model(X, target_pos_encoding)
-            predictions = rearrange(predictions, "b (h w) c -> b c h w", h = target.shape[1], w = target.shape[2]).squeeze()
-        else:
-            predictions = model(context)
+        predictions = model(context)
 
         with autocast():
             loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2])).mean()
