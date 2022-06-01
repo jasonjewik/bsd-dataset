@@ -1,9 +1,9 @@
 import os
 os.environ["WANDB_SILENT"] = "true"
-os.environ["WANDB_API_KEY"] = ""
 
 import sys
 import time
+import wandb
 import torch
 import logging
 import warnings
@@ -83,7 +83,7 @@ def worker(rank, options, logger):
 
     if(options.wandb and options.master):
         logging.debug("Starting wandb")
-        wandb.init(project = "bsd", notes = options.notes, tags = [], config = vars(options))
+        wandb.init(project = "climate-downscaling-benchmark", notes = options.notes, tags = [], config = vars(options))
         wandb.run.name = options.name
         wandb.save(os.path.join(options.log_dir_path, "params.txt"))
 
