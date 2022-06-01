@@ -11,29 +11,37 @@ class Compose:
             x = transform(x, info)
         return x
 
-class VariableSpecificTransform:
-    def __init__(self, var_name: str):
+class ConvertPrecipitation:
+    """ Convert kg m-2 s-1 to mm. """
+
+    def __init__(self, var_name: str = None):
         self.var_name = var_name
 
-class ConvertPrecipitation(VariableSpecificTransform):
     def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
-        for i, channel in enumerate(info['channels']):
-            if channel.endswith(':data'):
-                channel_var = channel.split(':')[1]
-                if self.var_name == channel_var:
-                    # convert kg m-2 s-1 to mm
-                    x[i] *= 86400
+        if self.var_name == None:
+            x *= 86400
+        else:
+            for i, channel in enumerate(info['channels']):
+                if channel.endswith(':data'):
+                    channel_var = channel.split(':')[1]
+                    if self.var_name == channel_var:                        
+                        x[i] *= 86400
         return x
 
-class LogTransformPrecipitation(VariableSpecificTransform):
-    def __init__(self, var_name: str, eps: float):
-        super().__init__(var_name)
+class LogTransformPrecipitation:
+    """ Apply log transformation. """
+
+    def __init__(self, var_name: str = None, eps: float = 0.1):
+        self.var_name = var_name
         self.eps = torch.tensor(eps)
 
-    def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:    
-        for i, channel in enumerate(info['channels']):
-            if channel.endswith(':data'):
-                channel_var = channel.split(':')
-                if self.var_name == channel_var:
-                    x[i] = torch.log(x[i] + self.eps) - torch.log(self.eps)
+    def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
+        if self.var_name == None:
+            x = torch.log(x + self.eps) - torch.log(self.eps)
+        else:
+            for i, channel in enumerate(info['channels']):
+                if channel.endswith(':data'):
+                    channel_var = channel.split(':')
+                    if self.var_name == channel_var:
+                        x[i] = torch.log(x[i] + self.eps) - torch.log(self.eps)
         return x
