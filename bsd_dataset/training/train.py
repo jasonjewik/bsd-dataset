@@ -12,7 +12,6 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         dataloader.sampler.set_epoch(epoch)
 
     model.train()
-    criterion = nn.MSELoss(reduction = "none").to(options.device)
 
     start = time.time()
     for index, batch in enumerate(dataloader): 
@@ -37,7 +36,7 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         target = target.nan_to_num()
 
         with autocast():
-            loss = ((criterion(predictions, target) * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])).mean()
+            loss = torch.square(predictions - target)[~mask].mean()
             scaler.scale(loss).backward()
             scaler.step(optimizer)
         scaler.update()
