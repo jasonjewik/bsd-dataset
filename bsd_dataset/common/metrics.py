@@ -29,7 +29,7 @@ def bias_ignore_nans(y_pred: torch.Tensor, y_true: torch.Tensor, mask: torch.Boo
 def pearsons_r_ignore_nans(y_pred: torch.Tensor, y_true: torch.Tensor, mask: torch.BoolTensor):
     masked_y_true = mask_with_zeros(y_true, mask)
     masked_y_pred = mask_with_zeros(y_pred, mask)
-    y_true_df = pd.DataFrame(masked_y_true)
-    y_pred_df = pd.DataFrame(masked_y_pred)    
+    y_true_df = pd.DataFrame(masked_y_true.cpu().flatten(1))
+    y_pred_df = pd.DataFrame(masked_y_pred.cpu().flatten(1))    
     r = y_pred_df.corrwith(y_true_df, axis=1).mean()
     return r

@@ -40,9 +40,9 @@ def get_dataloaders(options):
     input_shape, target_shape = [1, 1, 1], [1, 1, 1]
     
     for split in ["train", "val", "test"]:
-        if(options.no_train and split == "train"): continue
-        if(options.no_val and split == "val"): continue
-        if(options.no_test and split == "test"): continue
+        if(eval(f"options.no_{split}")):
+            dataloaders[split] = None
+            continue
 
         dataset = datasets.get_split(split)
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
