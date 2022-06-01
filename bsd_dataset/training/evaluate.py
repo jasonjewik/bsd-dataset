@@ -18,20 +18,14 @@ def get_val_metrics(model, dataloader, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            
-            if(options.model == "PerceiverIO"):
-                from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
-                input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
-                context = rearrange(context, "b c h w -> b (h w) c")
-                X = torch.cat([context, input_pos_encoding], dim = -1)
-                target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
-                predictions = model(X, target_pos_encoding)
-                predictions = rearrange(predictions, "b (h w) c -> b c h w", h = target.shape[1], w = target.shape[2]).squeeze()
-            else:
-                predictions = model(context)
-            
-            loss = torch.square(predictions - target.nan_to_num())[~mask].mean()
-            losses.append(loss.sum())
+            target = target.nan_to_num()
+            target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
+            context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
+
+            predictions = model(context)
+
+            loss = (torch.square(predictions - target) * (1 - mask.float())).sum()
+            losses.append(loss)
 
         loss = sum(losses) / dataloader.num_samples
         metrics["val_loss"] = loss
@@ -52,20 +46,14 @@ def get_test_metrics(model, dataloader, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
+            target = target.nan_to_num()
+            target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
+            context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
+
+            predictions = model(context)
             
-            if(options.model == "PerceiverIO"):
-                from ..models.perceiver_io.pos_encoding import get_fourier_position_encodings
-                input_pos_encoding = get_fourier_position_encodings(context.shape, device = options.device, input = True)
-                context = rearrange(context, "b c h w -> b (h w) c")
-                X = torch.cat([context, input_pos_encoding], dim = -1)
-                target_pos_encoding = get_fourier_position_encodings(target.unsqueeze(1).shape, device = options.device, input = False)
-                predictions = model(X, target_pos_encoding)
-                predictions = rearrange(predictions, "b (h w) c -> b c h w", h = target.shape[1], w = target.shape[2]).squeeze()
-            else:
-                predictions = model(context)
-            
-            loss = torch.square(predictions - target.nan_to_num())[~mask].mean()
-            losses.append(loss.sum())
+            loss = (torch.square(predictions - target) * (1 - mask.float())).sum()
+            losses.append(loss)
 
         loss = sum(losses) / dataloader.num_samples
         metrics["test_loss"] = loss
