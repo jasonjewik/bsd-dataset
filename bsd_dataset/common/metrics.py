@@ -34,7 +34,7 @@ def pearson_correlation_coefficient(y_pred, y_true):
         y_true = torch.tensor(y_true)
     y_pred = nan_to_num(y_pred, torch.isnan(y_true))
     y_true = nan_to_num(y_true)
-    y_pred = pd.DataFrame(y_pred)
-    y_true = pd.DataFrame(y_true)
+    y_pred = pd.DataFrame(y_pred.cpu().flatten(1))
+    y_true = pd.DataFrame(y_true.cpu().flatten(1))
     r = y_pred.corrwith(y_true, axis=1).mean()
     return r
