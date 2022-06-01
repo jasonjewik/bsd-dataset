@@ -87,7 +87,7 @@ def worker(rank, options, logger):
         wandb.run.name = options.name
         wandb.save(os.path.join(options.log_dir_path, "params.txt"))
 
-    # evaluate(start_epoch, model, dataloaders, options)
+    evaluate(start_epoch, model, dataloaders, options)
 
     if(dataloaders["train"] is not None):
         options.checkpoints_dir_path = os.path.join(options.log_dir_path, "checkpoints")
