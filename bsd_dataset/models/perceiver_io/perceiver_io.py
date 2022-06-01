@@ -8,6 +8,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from einops import rearrange, repeat
+from .pos_encoding import get_fourier_position_encodings
 
 # helpers
 
@@ -118,11 +119,16 @@ class PerceiverIO(nn.Module):
         cross_dim_head = 64,
         latent_dim_head = 64,
         weight_tie_layers = False,
-        self_per_cross_attn = 1
+        self_per_cross_attn = 1,
+        input_shape = None,
+        target_shape = None
     ):
         super().__init__()
         self.latents = nn.Parameter(torch.normal(mean = 0.0, std = 0.02, size = (num_latents, latent_dim)))
-
+        # self.queries = nn.Parameter(torch.randn(16000, queries_dim))
+        self.input_shape = input_shape
+        self.target_shape = target_shape
+        
         get_cross_attn = lambda: PreNorm(latent_dim, Attention(latent_dim, dim, heads = cross_heads, dim_head = cross_dim_head), context_dim = dim)
         get_cross_ff = lambda: PreNorm(latent_dim, FeedForward(latent_dim))
         get_latent_attn = lambda: PreNorm(latent_dim, Attention(latent_dim, heads = latent_heads, dim_head = latent_dim_head))
@@ -155,11 +161,17 @@ class PerceiverIO(nn.Module):
 
     def forward(
         self,
-        data,
+        context,
         queries = None,
         mask = None,
     ):
+        input_pos_encoding = get_fourier_position_encodings(context.shape, device = context.device, input = True)
+        context = rearrange(context, 'b c h w -> b (h w) c')
+        data = torch.cat([context, input_pos_encoding], dim = -1)
+        
         b, *_, device = *data.shape, data.device
+
+        queries = get_fourier_position_encodings((b, 1, self.target_shape[0], self.target_shape[1]), device = device, input = False)
 
         x = repeat(self.latents, 'n d -> b n d', b = b)
 
@@ -173,7 +185,8 @@ class PerceiverIO(nn.Module):
                 x = self_attn(x) + x
                 x = self_ff(x) + x
 
-        queries = data if queries is None else queries
+        # queries = data if queries is None else queries
+        # queries = repeat(self.queries, 'n d -> b n d', b = b)
 
         # cross attend from decoder queries to latents
         
@@ -181,7 +194,10 @@ class PerceiverIO(nn.Module):
         latents = self.decoder_ff(latents) + latents
         # final linear out
 
-        return self.to_logits(latents)
+        out = self.to_logits(latents)
+        out = rearrange(out, 'b (h w) c -> b c h w', h = self.target_shape[0], w = self.target_shape[1]).squeeze()
+        return out
+
 
 
 def Perceiver(input_shape, target_shape, model_config):
@@ -198,7 +214,7 @@ def Perceiver(input_shape, target_shape, model_config):
     if len(target_shape) == 2:
         C_out = 1
     else:
-        C_out, _, _ = target_shape
+        C_out, H_out, W_out = target_shape
 
     m = PerceiverIO(
             dim = C_in + configs['pos_encoding'] * 4 + 2, # 258 fourier position embeddings
@@ -210,8 +226,11 @@ def Perceiver(input_shape, target_shape, model_config):
             cross_dim_head = configs['head_dim'],
             depth = configs['depth'],
             self_per_cross_attn = configs['self_per_cross_attn'],
+            # queries_dim = 64,
             queries_dim = configs['pos_encoding'] * 4 + 2,
             weight_tie_layers = configs['weight_tie_layers'],
-            logits_dim = C_out  
+            logits_dim = C_out, 
+            input_shape = input_shape,
+            target_shape = target_shape
         )
     return m
