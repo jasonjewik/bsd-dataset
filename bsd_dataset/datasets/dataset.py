@@ -4,7 +4,7 @@ from pathlib import Path
 import os
 import re
 import tarfile
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from typing_extensions import Self
 from zipfile import ZipFile
 
@@ -31,8 +31,8 @@ class BSDD(torch.utils.data.Dataset):
         X_meta: Dict[str, Any],
         Y: torch.Tensor,
         Y_meta: Dict[str, Any],
-        transform: Optional[torch.nn.Module] = None,
-        target_transform: Optional[torch.nn.Module] = None,
+        transform: Callable = None,
+        target_transform: Callable = None,
         device: Union[str, torch.device] = 'cpu'
     ):
         self.X = X
@@ -46,48 +46,42 @@ class BSDD(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.X)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]]:        
         x = self.X[idx]
-        if self.transform:
-            x = self.transform(x)
+        y = self.Y[idx]
 
         x_lats = self.X_meta['lat']
         x_lons = self.X_meta['lon']
         x_lats = np.repeat(x_lats[:, np.newaxis], len(x_lons), axis=1)
         x_lons = np.repeat(x_lons[np.newaxis, :], len(x_lats), axis=0)
-        x_lats = torch.tensor(x_lats)
-        x_lons = torch.tensor(x_lons)
-
-        y = self.Y[idx]
-        if self.target_transform:
-            y = self.target_transform(y)        
-
+        x_lats = torch.tensor(x_lats).to(self.device)
+        x_lons = torch.tensor(x_lons).to(self.device)
+        
         y_lats = self.Y_meta['lat']
         y_lons = self.Y_meta['lon']
         y_lats = np.repeat(y_lats[:, np.newaxis], len(y_lons), axis=1)
         y_lons = np.repeat(y_lons[np.newaxis, :], len(y_lats), axis=0)
-        y_lats = torch.tensor(y_lats)
-        y_lons = torch.tensor(y_lons)
-        
-        x = x.to(self.device)
-        y = y.to(self.device)
+        y_lats = torch.tensor(y_lats).to(self.device)
+        y_lons = torch.tensor(y_lons).to(self.device)
 
-        x_lats = x_lats.to(self.device)
-        x_lons = x_lons.to(self.device)
-        y_lats = y_lats.to(self.device)
-        y_lons = y_lons.to(self.device)
-        mask = torch.isnan(y)
+        mask = torch.isnan(y).to(self.device)
 
-        channels = self.X_meta['channels']
         info = {
             'x_lat': x_lats,
             'x_lon': x_lons,
             'y_lat': y_lats,
             'y_lon': y_lons,
             'y_mask': mask,
-            'channels': channels
+            'channels': self.X_meta['channels']
         }
-        
+
+        if self.transform:
+            x = self.transform(x, info)
+        if self.target_transform:
+            y = self.target_transform(y, info)
+        x = x.to(self.device)
+        y = y.to(self.device)
+
         return x, y, info
 
 class BSDDBuilder:
@@ -278,7 +272,7 @@ class BSDDBuilder:
 
         return self
 
-    def get_split(self, split: str, transform: Optional[torch.nn.Module] = None, target_transform: Optional[torch.nn.Module] = None) -> BSDD:
+    def get_split(self, split: str, transform: Callable = None, target_transform: Callable = None) -> BSDD:
         splits = ['train', 'val', 'test']
         if split not in splits:
             raise ValueError(f'Split {split} not recognized\nMust be of {splits}')
