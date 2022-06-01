@@ -78,12 +78,14 @@ class BSDD(torch.utils.data.Dataset):
         y_lons = y_lons.to(self.device)
         mask = torch.isnan(y)
 
+        channels = self.X_meta['channels']
         info = {
             'x_lat': x_lats,
             'x_lon': x_lons,
             'y_lat': y_lats,
             'y_lon': y_lons,
-            'y_mask': mask
+            'y_mask': mask,
+            'channels': channels
         }
         
         return x, y, info
@@ -288,9 +290,11 @@ class BSDDBuilder:
         with open(self.root / Xfile, 'rb') as f:
             npzfile = np.load(f)
             arrs = []
+            channels = []
             for key in npzfile.files:
                 if key not in ('gtmed2010', 'lat', 'lon'):
                     arrs.append(npzfile[key])
+                    channels.append(key)
             if 'gmted2010' in npzfile.files:
                 # TODO @jasonjewik: verify each array in the file has the same number of days
                 n_days = arrs[0].shape[0]
@@ -298,12 +302,10 @@ class BSDDBuilder:
                 gmted2010 = np.expand_dims(gmted2010, 0)
                 gmted2010 = np.repeat(gmted2010, n_days, axis=0)
                 arrs.append(gmted2010)
-            # shape = get_shape_of_largest_array(arrs)
-            # new_arrs = match_array_shapes(arrs, shape)
             X = np.stack(arrs, axis=1)  # days x channel x lon x lat
             lats = npzfile['lat']
             lons = npzfile['lon']
-            X_meta = {'lat': lats, 'lon': lons}
+            X_meta = {'lat': lats, 'lon': lons, 'channels': channels}
         with open(self.root / Yfile, 'rb') as f:
             npzfile = np.load(f)
             Y = npzfile['target']
