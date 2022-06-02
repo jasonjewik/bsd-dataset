@@ -40,15 +40,16 @@ def get_dataloaders(options):
     datasets = get_datasets(options)
     input_shape, target_shape = [1, 1, 1], [1, 1, 1]
 
-    input_transform = transforms.Compose([transforms.ConvertPrecipitation(var_name = "pr"), transforms.LogTransformPrecipitation(var_name = "pr", eps=0.1)])
-    target_transform = transforms.LogTransformPrecipitation(eps=0.1)
+    # input_transform = transforms.Compose([transforms.ConvertPrecipitation(var_name = "pr")]), transforms.LogTransformPrecipitation(var_name = "pr", eps = 0.001)])
+    # target_transform = transforms.LogTransformPrecipitation(eps = 0.001)
     
     for split in ["train", "val", "test"]:
         if(eval(f"options.no_{split}")):
             dataloaders[split] = None
             continue
 
-        dataset = datasets.get_split(split, input_transform, target_transform)
+        # dataset = datasets.get_split(split, input_transform, target_transform)
+        dataset = datasets.get_split(split)
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
         sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
         dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = (split == "train") and (sampler is None), drop_last = (split == "train"))

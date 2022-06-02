@@ -3,6 +3,7 @@ import wandb
 import torch
 import logging
 import torch.nn as nn
+from torchvision.transforms import GaussianBlur
 from torch.cuda.amp import autocast
 from einops import rearrange
 
@@ -21,8 +22,11 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         optimizer.zero_grad()
         
         context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)        
+        context[:, 5, :, :] = torch.log(context[:, 5, :, :] * 86400 + 0.1) - torch.log(torch.tensor(0.1))
         target = target.nan_to_num()
-        
+        # target = nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :])
+        target = GaussianBlur(3)(nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :]))
+
         predictions = model(context)
 
         with autocast():
