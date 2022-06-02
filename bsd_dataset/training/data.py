@@ -2,10 +2,10 @@ import os
 import torch
 import logging
 import configobj
+from bsd_dataset.common import  transforms
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from bsd_dataset import get_dataset, regions, DatasetRequest
-import bsd_dataset.common.transforms as transforms
 
 def fixtypes(config):
     for key, value in config.items():
@@ -40,21 +40,15 @@ def get_dataloaders(options):
     datasets = get_datasets(options)
     input_shape, target_shape = [1, 1, 1], [1, 1, 1]
 
-    transform = transforms.Compose([
-        # in CDS, precipitation's variable name is "pr"
-        # transforms.ConvertPrecipitation(var_name='pr'),
-        transforms.LogTransformPrecipitation(var_name='pr', eps=0.001)
-    ])
-
-    # don't specify var name for target because it is a 2D tensor (all precipitation, no channels)
-    target_transform = transforms.LogTransformPrecipitation(eps=0.001)
+    input_transform = transforms.Compose([transforms.ConvertPrecipitation(var_name = "pr"), transforms.LogTransformPrecipitation(var_name = "pr", eps=0.1)])
+    target_transform = transforms.LogTransformPrecipitation(eps=0.1)
     
     for split in ["train", "val", "test"]:
         if(eval(f"options.no_{split}")):
             dataloaders[split] = None
             continue
 
-        dataset = datasets.get_split(split, transform, target_transform)
+        dataset = datasets.get_split(split, input_transform, target_transform)
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
         sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
         dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = (split == "train") and (sampler is None), drop_last = (split == "train"))
