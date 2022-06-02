@@ -2,6 +2,7 @@ import os
 import torch
 import logging
 import configobj
+from bsd_dataset.common import  transforms
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from bsd_dataset import get_dataset, regions, DatasetRequest
@@ -38,12 +39,16 @@ def get_dataloaders(options):
 
     datasets = get_datasets(options)
     input_shape, target_shape = [1, 1, 1], [1, 1, 1]
+
+    # input_transform = transforms.Compose([transforms.ConvertPrecipitation(var_name = "pr")]), transforms.LogTransformPrecipitation(var_name = "pr", eps = 0.001)])
+    # target_transform = transforms.LogTransformPrecipitation(eps = 0.001)
     
     for split in ["train", "val", "test"]:
         if(eval(f"options.no_{split}")):
             dataloaders[split] = None
             continue
 
+        # dataset = datasets.get_split(split, input_transform, target_transform)
         dataset = datasets.get_split(split)
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
         sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
