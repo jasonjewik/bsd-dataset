@@ -24,7 +24,7 @@ def rmse_ignore_nans(y_pred: torch.Tensor, y_true: torch.Tensor, mask: torch.Boo
 def bias_ignore_nans(y_pred: torch.Tensor, y_true: torch.Tensor, mask: torch.BoolTensor):
     masked_y_true = mask_with_zeros(y_true, mask)
     masked_y_pred = mask_with_zeros(y_pred, mask)
-    return torch.sum(y_pred - y_true)
+    return torch.sum(masked_y_pred - masked_y_true)
 
 def pearsons_r_ignore_nans(y_pred: torch.Tensor, y_true: torch.Tensor, mask: torch.BoolTensor):
     masked_y_true = mask_with_zeros(y_true, mask)
