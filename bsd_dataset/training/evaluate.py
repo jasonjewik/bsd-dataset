@@ -4,7 +4,7 @@ import logging
 import torch.nn as nn
 from tqdm import tqdm    
 from einops import rearrange
-from bsd_dataset.common.metrics import rmse, bias, pearson_correlation_coefficient
+from bsd_dataset.common.metrics import rmse, bias, pearsons_r
 
 def get_metrics(model, dataloader, prefix, options):
     metrics = {}
@@ -18,14 +18,14 @@ def get_metrics(model, dataloader, prefix, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
-            context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
+            # target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
+            # context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
 
             predictions = model(context)
 
-            total_rmse += rmse(predictions, target) * len(target)
-            total_bias += bias(predictions, target) * len(target)
-            total_pearson_correlation_coefficient += pearson_correlation_coefficient(predictions, target) * len(target)
+            total_rmse += rmse(predictions, target, mask) * len(target)
+            total_bias += bias(predictions, target, mask) * len(target)
+            total_pearson_correlation_coefficient += pearsons_r(predictions, target, mask) * len(target)
 
         total_rmse /= dataloader.num_samples
         total_bias /= dataloader.num_samples
