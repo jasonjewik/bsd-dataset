@@ -60,7 +60,11 @@ def show_bias(
     _, ax = plt.subplots(figsize=(5, 5))
 
     cmin, cmax = -200, 200
-    cmap = mpl.cm.get_cmap(name='bwr').copy()
+    colors = [
+        'royalblue', 'cornflowerblue', 'lightsteelblue', 'white', 
+        'lightcoral', 'indianred', 'brown'
+    ]
+    cmap = mpl.colors.LinearSegmentedColormap.from_list('mycmap', colors)
     cmap.set_bad(color='lightgrey')
 
     cbar = plt.colorbar(
@@ -99,6 +103,61 @@ def show_bias(
     ax.invert_yaxis()
     plt.show()
 
+def show_uncertainty(
+    y_pred_means: torch.Tensor,
+    y_pred_vars: torch.Tensor,
+    y_true: torch.Tensor,
+    y_mask: torch.BoolTensor,
+    study_region: Region
+):
+    _, ax = plt.subplots(figsize=(5, 5))
+    y_pred_stds = torch.sqrt(y_pred_vars)
+    arr = num_std_above_below(y_true, y_mask, y_pred_means, y_pred_stds, 3)
+
+    colors = [
+        'royalblue', 'cornflowerblue', 'lightsteelblue', 'white', 
+        'white', 'lightcoral', 'indianred', 'brown'
+    ]
+    cmap = mpl.colors.LinearSegmentedColormap.from_list('mycmap', colors, N=8)
+    cmap.set_bad(color='lightgrey')
+    minval, maxval = -4, 4
+
+    cbar = plt.colorbar(
+        mpl.cm.ScalarMappable(cmap=cmap),
+        ax=ax,
+        label='Standard deviations',
+        ticks=np.linspace(0, 1, len(colors)+1)
+    )
+    cbar.ax.set_yticklabels(
+        ['<-3', '-3', '-2', '-1', '0', '1', '2', '3', '>3']
+    )
+
+    lats = study_region.get_latitudes()
+    lons = study_region.get_longitudes(180)
+
+    yticks = np.linspace(0, y_true.shape[1]+1, 8)
+    ax.set_yticks(
+        ticks=yticks,
+        labels=np.linspace(lats[1], lats[0]-1, len(yticks), dtype=int)
+    )
+    ax.set_ylabel('Latitude')
+
+    xticks = np.linspace(0, y_true.shape[1]+1, 8)
+    ax.set_xticks(
+        ticks=xticks,
+        labels=np.linspace(lons[0], lons[1]+1, len(xticks), dtype=int)
+    )
+    ax.set_xlabel('Longitude')
+
+    handles = [
+        mpl.patches.Patch(facecolor='lightgrey', label='missing data')]
+    ax.legend(handles=handles)
+
+    # Multiply by 0.5 so that all the value fall into the correct bin
+    ax.imshow(arr * 0.5, cmap=cmap, vmin=minval, vmax=maxval)
+    ax.invert_yaxis()
+    plt.show()
+
 def show_rmse(
     y_pred: List[torch.Tensor], 
     y_true: List[torch.Tensor], 
@@ -119,7 +178,7 @@ def within_n_std(
 ) -> torch.BoolTensor:
     lower_bound = (means - n * stds)
     upper_bound = (means + n * stds)
-    return (lower_bound < t) & (t < upper_bound)
+    return (lower_bound <= t) & (t <= upper_bound)
 
 def num_std_above_below(
     t: torch.Tensor, 
