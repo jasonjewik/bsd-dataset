@@ -7,9 +7,10 @@ class Compose:
         self.transforms = transforms
 
     def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> Any:
+        xx = torch.clone(x)
         for transform in self.transforms:
-            x = transform(x, info)
-        return x
+            xx = transform(xx, info)
+        return xx
 
 class ConvertPrecipitation:
     """ Convert kg m-2 s-1 to mm. """
@@ -18,15 +19,16 @@ class ConvertPrecipitation:
         self.var_name = var_name
 
     def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
+        xx = torch.clone(x)
         if self.var_name == None:
-            x *= 86400
+            xx *= 86400
         else:
             for i, channel in enumerate(info['channels']):
                 if channel.endswith(':data'):
                     channel_var = channel.split(':')[1]
-                    if self.var_name == channel_var:                        
-                        x[i] *= 86400
-        return x
+                    if self.var_name == channel_var:
+                        xx[i] *= 86400
+        return xx
 
 class LogTransformPrecipitation:
     """ Apply log transformation. """
@@ -36,12 +38,13 @@ class LogTransformPrecipitation:
         self.eps = torch.tensor(eps)
 
     def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
+        xx = torch.clone(x)
         if self.var_name == None:
-            x = torch.log(x + self.eps) - torch.log(self.eps)
+            xx = torch.log(xx + self.eps) - torch.log(self.eps)
         else:
             for i, channel in enumerate(info['channels']):
                 if channel.endswith(':data'):
                     channel_var = channel.split(':')
                     if self.var_name == channel_var:
-                        x[i] = torch.log(x[i] + self.eps) - torch.log(self.eps)
-        return x
+                        xx[i] = torch.log(xx[i] + self.eps) - torch.log(self.eps)
+        return xx
