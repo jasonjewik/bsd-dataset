@@ -75,9 +75,9 @@ class BSDD(torch.utils.data.Dataset):
             'channels': self.X_meta['channels']
         }
 
-        if self.transform:
+        if self.transform is not None:
             x = self.transform(x, info)
-        if self.target_transform:
+        if self.target_transform is not None:
             y = self.target_transform(y, info)
         x = x.to(self.device)
         y = y.to(self.device)
