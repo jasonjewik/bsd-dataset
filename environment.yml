@@ -3,6 +3,7 @@ channels:
 dependencies:
   - pip
   - pip:
+    - attrdict
     - cdsapi
     - configobj
     - numpy
