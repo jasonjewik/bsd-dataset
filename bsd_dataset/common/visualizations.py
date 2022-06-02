@@ -153,8 +153,10 @@ def show_uncertainty(
         mpl.patches.Patch(facecolor='lightgrey', label='missing data')]
     ax.legend(handles=handles)
 
-    # Multiply by 0.5 so that all the value fall into the correct bin
-    ax.imshow(arr * 0.5, cmap=cmap, vmin=minval, vmax=maxval)
+    # Move everything 0.5 closer to 0 so it falls in the correct bin
+    arr = torch.where(arr > 0, arr - 0.5, arr)
+    arr = torch.where(arr < 0, arr + 0.5, arr)
+    ax.imshow(arr, cmap=cmap, vmin=minval, vmax=maxval)
     ax.invert_yaxis()
     plt.show()
 
