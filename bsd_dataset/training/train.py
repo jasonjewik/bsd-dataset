@@ -25,8 +25,14 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         # target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
         # context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
 
-        predictions = model(context)
+        if options.model == 'Transformer':
+            predictions = model(context, batch[2])
+        else:
+            predictions = model(context)
 
+        # loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2])).mean()
+        # loss.backward()
+        # optimizer.step()
         with autocast():
             loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2])).mean()
             scaler.scale(loss).backward()

@@ -5,27 +5,6 @@ from torch.distributions.normal import Normal
 from attrdict import AttrDict
 import math
 
-class PositionalEncoding(nn.Module):
-    
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        position = torch.arange(max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        pe = torch.zeros(1, max_len, d_model)
-        pe[0:, :, 0::2] = torch.sin(position * div_term)
-        pe[0:, :, 1::2] = torch.cos(position * div_term)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        """
-        Args:
-            x: Tensor, shape [seq_len, batch_size, embedding_dim]
-        """
-        x = x + self.pe[:, :x.size(1)]
-        return self.dropout(x)
-
 class TransformerClimate(nn.Module):
     def __init__(
         self, input_shape, target_shape, p_x, p_y,
@@ -48,7 +27,8 @@ class TransformerClimate(nn.Module):
         self.len_y = len_y
 
         self.embedder = nn.Linear(d_in, d_model)
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
+        self.pos_enc_x = nn.Linear(p_x**2 * 2, d_model)
+        self.pos_enc_y = nn.Linear(p_y**2 * 2, d_model)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead,
             dim_feedforward=dim_ffn, dropout=dropout,
@@ -66,12 +46,12 @@ class TransformerClimate(nn.Module):
         else:
             len = len_x + len_y
             mask = torch.zeros((len, len), device='cuda').fill_(float('-inf'))
-            mask[:, 0] = 0.0
+            mask[:, :len_x] = 0.0
         self.mask = mask
         return self.mask
 
     def extract_patch(self, x, patch_size):
-        x = x.cuda()
+        # x = x.cuda()
         # x: (B, H, W, C) --> (B, N, P^2 x C), where N = HW/P^2
         B, H, W, C = x.shape
         shape = [B, H // patch_size, W // patch_size] + [patch_size, patch_size] + [C]
@@ -88,13 +68,24 @@ class TransformerClimate(nn.Module):
         x = x.reshape((b, h, w))
         return x
 
-    def forward(self, x):
+    def get_lat_lon(self, info, x, y):
+        for k, v in info.items():
+            if 'x' in k:
+                info[k] = self.extract_patch(v.to(dtype=x.dtype, device=x.device).unsqueeze(-1), self.p_x)
+            elif 'y' in k:
+                info[k] = self.extract_patch(v.to(dtype=y.dtype, device=y.device).unsqueeze(-1), self.p_y)
+        x_lat_lon = torch.stack((info['x_lat'], info['x_lon']), dim=-1).reshape(x.shape[0], x.shape[1], -1)
+        y_lat_lon = torch.stack((info['y_lat'], info['y_lon']), dim=-1).reshape(y.shape[0], y.shape[1], -1)
+        return x_lat_lon, y_lat_lon
+
+    def forward(self, x, info):
         x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
         y = torch.zeros((x.shape[0], self.len_y, self.d_in), device=x.device)
+        x_lat_lon, y_lat_lon = self.get_lat_lon(info, x, y)
         embeddings_x = self.embedder(x)
-        embeddings_x = embeddings_x + self.pos_encoder(embeddings_x)
+        embeddings_x = embeddings_x + self.pos_enc_x(x_lat_lon)
         embeddings_y = self.embedder(y)
-        embeddings_y = embeddings_y + self.pos_encoder(embeddings_y)
+        embeddings_y = embeddings_y + self.pos_enc_y(y_lat_lon)
         embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
         mask = self.get_mask(x.shape[1], self.len_y)
 

@@ -21,7 +21,10 @@ def get_metrics(model, dataloader, prefix, options):
             # target = torch.log(target / 86400 + 0.1) - torch.log(torch.tensor(0.1))
             # context[:, 4, :, :] = torch.log(context[:, 4, :, :] + 0.1) - torch.log(torch.tensor(0.1))
 
-            predictions = model(context)
+            if options.model == 'Transformer':
+                predictions = model(context, batch[2])
+            else:
+                predictions = model(context)
 
             total_rmse += rmse(predictions, target, mask) * len(target)
             total_bias += bias(predictions, target, mask) * len(target)
