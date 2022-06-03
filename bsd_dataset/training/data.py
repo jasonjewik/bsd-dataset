@@ -50,6 +50,13 @@ def get_dataloaders(options):
 
         # dataset = datasets.get_split(split, input_transform, target_transform)
         dataset = datasets.get_split(split)
+
+        # input = downsampled output
+        pool = torch.nn.AvgPool2d(4, 4)
+        target = torch.nan_to_num(dataset.Y.unsqueeze(1))
+        fake_input = pool(target)
+        dataset.X = fake_input
+
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
         sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
         dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = (split == "train") and (sampler is None), drop_last = (split == "train"))

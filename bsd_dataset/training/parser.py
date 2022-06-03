@@ -13,6 +13,7 @@ def parse_args():
     parser.add_argument("--no_train", action = "store_true", default = False, help = "No training")
     parser.add_argument("--no_val", action = "store_true", default = False, help = "No validation")
     parser.add_argument("--no_test", action = "store_true", default = False, help = "No test")
+    parser.add_argument("--eval_freq", type=int, default=1, help="evaluation frequency")
     parser.add_argument("--data", type = str, default = None, help = "Path to ini file")
     parser.add_argument("--device", type = str, default = None, choices = ["cpu", "gpu"], help = "Specify device (gpu > cpu)")
     parser.add_argument("--device_id", type = int, default = 0, help = "Specify device id for single gpu training")

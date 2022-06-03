@@ -47,7 +47,8 @@ class TransformerClimate(nn.Module):
         self.d_out = d_out
         self.len_y = len_y
 
-        self.embedder = nn.Linear(d_in, d_model)
+        self.embedder_x = nn.Linear(d_in, d_model)
+        self.embedder_y = nn.Linear(d_out, d_model)
         self.pos_encoder = PositionalEncoding(d_model, dropout)
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=nhead,
@@ -66,12 +67,13 @@ class TransformerClimate(nn.Module):
         else:
             len = len_x + len_y
             mask = torch.zeros((len, len), device='cuda').fill_(float('-inf'))
-            mask[:, 0] = 0.0
+            mask[:, :len_x] = 0.0
+            # mask[len_x:, len_x:].triu_(diagonal=0)
         self.mask = mask
         return self.mask
 
     def extract_patch(self, x, patch_size):
-        x = x.cuda()
+        # x = x.cuda()
         # x: (B, H, W, C) --> (B, N, P^2 x C), where N = HW/P^2
         B, H, W, C = x.shape
         shape = [B, H // patch_size, W // patch_size] + [patch_size, patch_size] + [C]
@@ -88,27 +90,48 @@ class TransformerClimate(nn.Module):
         x = x.reshape((b, h, w))
         return x
 
-    def forward(self, x):
+    def get_lat_lon(self, info, x, y):
+        for k, v in info.items():
+            if 'x' in k:
+                info[k] = self.extract_patch(v.to(dtype=x.dtype, device=x.device).unsqueeze(-1), self.p_x)
+            elif 'y' in k:
+                info[k] = self.extract_patch(v.to(dtype=y.dtype, device=y.device).unsqueeze(-1), self.p_y)
+        x_lat_lon = torch.stack((info['x_lat'], info['x_lon']), dim=-1).reshape(x.shape[0], x.shape[1], -1)
+        y_lat_lon = torch.stack((info['y_lat'], info['y_lon']), dim=-1).reshape(y.shape[0], y.shape[1], -1)
+        return x_lat_lon, y_lat_lon
+
+    def forward(self, x, y):
         x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
-        y = torch.zeros((x.shape[0], self.len_y, self.d_in), device=x.device)
-        embeddings_x = self.embedder(x)
-        embeddings_x = embeddings_x + self.pos_encoder(embeddings_x)
-        embeddings_y = self.embedder(y)
-        embeddings_y = embeddings_y + self.pos_encoder(embeddings_y)
+        y = torch.zeros((x.shape[0], self.len_y, self.d_out), device=x.device)
+        y = self.extract_patch(y.unsqueeze(-1), self.p_y)
+
+        embeddings_x = self.embedder_x(x)
+        embeddings_x = self.pos_encoder(embeddings_x)
+        embeddings_y = self.embedder_y(y)
+        embeddings_y = self.pos_encoder(embeddings_y)
         embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
         mask = self.get_mask(x.shape[1], self.len_y)
 
         transformer_out = self.transformer(embeddings, mask=mask)
-        predictions = self.predictor(transformer_out)
+        predictions = self.predictor(transformer_out)[:, x.shape[1]:]
         # return predictions[:, x.shape[1]:]
-        return self.recover_from_patch(predictions[:, x.shape[1]:])
-        # mean, std = torch.chunk(predictions, 2, dim=-1)
-        # mean, std = mean[:, x.shape[1]:], std[:, x.shape[1]:]
-        # if self.std_constant:
-        #     std = torch.ones_like(mean)
-        # else:
-        #     std = torch.exp(std)
-        # pred_dist = Normal(mean, std)
+        return self.recover_from_patch(predictions)
+    
+    def predict(self, x):
+        x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
+        y = torch.zeros((x.shape[0], self.len_y, self.d_out), device=x.device)
+
+        embeddings_x = self.embedder_x(x)
+        embeddings_x = self.pos_encoder(embeddings_x)
+        mask = self.get_mask(x.shape[1], self.len_y+1)
+        for i in range(self.len_y):
+            embeddings_y = self.embedder_y(y)
+            embeddings_y = self.pos_encoder(embeddings_y)
+            embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
+            transformer_out = self.transformer(embeddings, mask=mask)
+            predictions = self.predictor(transformer_out)
+            y[:, i, :] = predictions[:, x.shape[1]+i, :]
+        return self.recover_from_patch(y[:, :])
 
 
 def Transformer(input_shape, target_shape, model_config):

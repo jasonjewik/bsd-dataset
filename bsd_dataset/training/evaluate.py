@@ -18,12 +18,16 @@ def get_metrics(model, dataloader, prefix, options):
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
-            context[:, 5, :, :] = torch.log(context[:, 5, :, :] * 86400 + 0.1) - torch.log(torch.tensor(0.1))
+            target = target.nan_to_num()
 
+            # context[:, 5, :, :] = torch.log(context[:, 5, :, :] * 86400 + 0.1) - torch.log(torch.tensor(0.1))
             # target = nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :])
-            target = GaussianBlur(3)(nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :]))
+            # target = GaussianBlur(3)(nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :]))
 
-            predictions = model(context)
+            if options.model == 'Transformer':
+                    predictions = model.predict(context)
+            else:
+                predictions = model(context)
 
             mask[...] = False
             for i in range(len(context)):

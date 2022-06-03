@@ -105,15 +105,16 @@ def worker(rank, options, logger):
             if(options.master): 
                 logging.info(f"Finished epoch {epoch} in {end - start:.3f} seconds")
 
-            metrics = evaluate(epoch, model, dataloaders, options)
+            if epoch % options.eval_freq == 0:
+                metrics = evaluate(epoch, model, dataloaders, options)
 
-            if(options.master):
-                checkpoint = {"epoch": epoch, "name": options.name, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict()}
-                torch.save(checkpoint, os.path.join(options.checkpoints_dir_path, f"epoch_{epoch}.pt"))
-                if("loss" in metrics):
-                    if(metrics["loss"] < best_loss):
-                        best_loss = metrics["loss"]
-                        torch.save(checkpoint, os.path.join(options.checkpoints_dir_path, f"epoch.best.pt"))
+                if(options.master):
+                    checkpoint = {"epoch": epoch, "name": options.name, "model_state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict()}
+                    torch.save(checkpoint, os.path.join(options.checkpoints_dir_path, f"epoch_{epoch}.pt"))
+                    if("loss" in metrics):
+                        if(metrics["loss"] < best_loss):
+                            best_loss = metrics["loss"]
+                            torch.save(checkpoint, os.path.join(options.checkpoints_dir_path, f"epoch.best.pt"))
 
     if(options.distributed):
         dist.destroy_process_group()
