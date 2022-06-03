@@ -6,6 +6,7 @@ __version__ = '0.1.0'
 
 
 input_datasets = [
+    'chirps',
     'projections-cmip5-daily-single-levels',
     'projections-cmip5-daily-pressure-levels',
     'projections-cmip6',

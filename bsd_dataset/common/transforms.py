@@ -6,7 +6,7 @@ class Compose:
     def __init__(self, transforms: List[Callable]):
         self.transforms = transforms
 
-    def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> Any:
+    def __call__(self, x: torch.Tensor, info: Dict[str, Any] = None) -> Any:
         xx = torch.clone(x)
         for transform in self.transforms:
             xx = transform(xx, info)
@@ -18,7 +18,7 @@ class ConvertPrecipitation:
     def __init__(self, var_name: str = None):
         self.var_name = var_name
 
-    def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
+    def __call__(self, x: torch.Tensor, info: Dict[str, Any] = None) -> torch.Tensor:
         xx = torch.clone(x)
         if self.var_name == None:
             xx *= 86400
@@ -37,7 +37,7 @@ class LogTransformPrecipitation:
         self.var_name = var_name
         self.eps = torch.tensor(eps)
 
-    def __call__(self, x: torch.Tensor, info: Dict[str, Any]) -> torch.Tensor:
+    def __call__(self, x: torch.Tensor, info: Dict[str, Any] = None) -> torch.Tensor:
         xx = torch.clone(x)
         if self.var_name == None:
             xx = torch.log(xx + self.eps) - torch.log(self.eps)

@@ -167,12 +167,18 @@ class BSDDBuilder:
                 direc = self.root / 'gmted2010'
                 direc.mkdir(parents=True, exist_ok=True)
                 input_dstdirs.append(direc)
+            if ds_req.dataset == 'chirps':
+                chirps_urls = self.get_chirps_urls(ds_req)
+                input_urls.extend(chirps_urls)
+                direc = self.root / 'chirps-input'
+                direc.mkdir(parents=True, exist_ok=True)
+                input_dstdirs.extend([direc] * len(chirps_urls))
     
         target_urls, target_dstdir = [], Path()
         if self.target_dataset.dataset == 'chirps':
             chirps_urls = self.get_chirps_urls(self.target_dataset)
             target_urls.extend(chirps_urls)
-            target_dstdir = self.root / 'chirps'
+            target_dstdir = self.root / 'chirps-target'
         if self.target_dataset.dataset == 'persiann-cdr':
             persianncdr_urls = self.get_persianncdr_urls()
             target_urls.extend(persianncdr_urls)
@@ -230,19 +236,32 @@ class BSDDBuilder:
 
         # Get the GMTED2010 data
         gmted_present = False
+        chirps_present = False
         for ds in self.input_datasets:            
             if ds.dataset == 'gmted2010':
                 gmted_present = True
+            if ds.dataset == 'chirps':
+                chirps_present = True
         
         if gmted_present:
             gmted2010_data = dict()
             for spl in splits:
                 gmted2010_data[spl] = self.extract_gmted2010_data(spl, self.root / 'gmted2010')
 
+        if chirps_present:
+            chirps_datas = defaultdict(dict)
+            for spl in splits:
+                chirps_data, chirps_lats, chirps_lons = self.extract_chirps_data(spl, self.root / 'chirps-input')
+                chirps_datas[spl]['input'] = chirps_data
+                chirps_datas[spl]['lat'] = chirps_lats
+                chirps_datas[spl]['lon'] = chirps_lons
+
         # Save separately to save room on disk, scaling and concatenation can happen later
         for spl in splits:
             with open(self.root / f'{spl}_x.npz', 'wb') as f:
-                if gmted_present:
+                if chirps_present:
+                    np.savez(f, **chirps_datas[spl])
+                elif gmted_present:
                     np.savez(f, **cds_data[spl], gmted2010=gmted2010_data[spl])
                 else:
                     np.savez(f, **cds_data[spl])
