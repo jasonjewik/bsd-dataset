@@ -1,65 +1,37 @@
 import os
 import torch
-import logging
-import configobj
-from bsd_dataset.common import  transforms
+import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
-from bsd_dataset import get_dataset, regions, DatasetRequest
 
-def fixtypes(config):
-    for key, value in config.items():
-        if(isinstance(value, dict)):
-            fixtypes(value)
-        else:
-            if(key == "resolution"):
-                config[key] = float(value)
-            elif(key.endswith("_region")):
-                config[key] = eval(value)
-            elif(key.endswith("_dates")):
-                config[key] = tuple(value)
-            elif(key in ["download", "extract"]):
-                config[key] = value == "True"
+class MyDataset(Dataset):
+    def __init__(self, path, split):
+        super().__init__()
+        path_x = os.path.join(path, split + "_x.npy")
+        path_y = os.path.join(path, split + "_y.npy")
+        self.x = torch.from_numpy(np.load(path_x))
+        self.y = torch.from_numpy(np.load(path_y))
+    
+    def __getitem__(self, index):
+        mask = torch.zeros(self.y.shape[1:]).bool()
+        return self.x[index].unsqueeze(0), self.y[index], {"y_mask": mask}
 
-def get_datasets(options):
-    if(not os.path.exists(options.data)):
-        raise Exception(f"Path does not exist: {options.data}")
-
-    config = dict(configobj.ConfigObj(options.data))
-    fixtypes(config)
-
-    input_datasets = [DatasetRequest(**kwargs) for kwargs in config["input_datasets"].values()]
-    target_dataset = DatasetRequest(**config["target_dataset"])
-    datasets = get_dataset(input_datasets, target_dataset, **config["get_dataset"]) 
-
-    return datasets
+    def __len__(self):
+        return self.x.shape[0]
 
 def get_dataloaders(options):
     dataloaders = {}
-
-    datasets = get_datasets(options)
-    input_shape, target_shape = [1, 1, 1], [1, 1, 1]
-
-    # input_transform = transforms.Compose([transforms.ConvertPrecipitation(var_name = "pr")]), transforms.LogTransformPrecipitation(var_name = "pr", eps = 0.001)])
-    # target_transform = transforms.LogTransformPrecipitation(eps = 0.001)
     
     for split in ["train", "val", "test"]:
         if(eval(f"options.no_{split}")):
             dataloaders[split] = None
             continue
 
-        # dataset = datasets.get_split(split, input_transform, target_transform)
-        dataset = datasets.get_split(split)
-
-        # input = downsampled output
-        pool = torch.nn.AvgPool2d(4, 4)
-        target = torch.nan_to_num(dataset.Y.unsqueeze(1))
-        fake_input = pool(target)
-        dataset.X = fake_input
+        dataset = MyDataset(options.data, split = split)
 
         input_shape, target_shape = list(dataset[0][0].shape), list(dataset[0][1].shape)
         sampler = DistributedSampler(dataset) if(options.distributed and split == "train") else None
-        dataloader = torch.utils.data.DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = (split == "train") and (sampler is None), drop_last = (split == "train"))
+        dataloader = DataLoader(dataset, batch_size = options.batch_size, num_workers = options.num_workers, pin_memory = (split == "train"), sampler = sampler, shuffle = (split == "train") and (sampler is None), drop_last = (split == "train"))
         dataloader.num_samples = options.batch_size * len(dataloader) if (split == "train") else len(dataset)
         dataloader.num_batches = len(dataloader)
         dataloaders[split] = dataloader
