@@ -164,6 +164,7 @@ class PerceiverIO(nn.Module):
         context,
         queries = None,
         mask = None,
+        **kwargs
     ):
         input_pos_encoding = get_fourier_position_encodings(context.shape, device = context.device, input = True)
         context = rearrange(context, 'b c h w -> b (h w) c')

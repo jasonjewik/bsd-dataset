@@ -33,6 +33,11 @@ class TransformerClimate(nn.Module):
         dim_ffn, dropout, activation, std_constant,
     ):
         super().__init__()
+        # assert input_shape[1] % p_x == 0
+        # assert input_shape[2] % p_x == 0
+        # assert target_shape[0] % p_y == 0
+        # assert target_shape[1] % p_y == 0
+
         self.input_shape = input_shape
         self.target_shape = target_shape
         self.p_x = p_x
@@ -100,7 +105,10 @@ class TransformerClimate(nn.Module):
         y_lat_lon = torch.stack((info['y_lat'], info['y_lon']), dim=-1).reshape(y.shape[0], y.shape[1], -1)
         return x_lat_lon, y_lat_lon
 
-    def forward(self, x, y):
+    def forward(self, x, y = None):
+        if(y is None):
+            return self.predict(x)
+            
         x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
         y = torch.zeros((x.shape[0], self.len_y, self.d_out), device=x.device)
         y = self.extract_patch(y.unsqueeze(-1), self.p_y)
@@ -123,15 +131,15 @@ class TransformerClimate(nn.Module):
 
         embeddings_x = self.embedder_x(x)
         embeddings_x = self.pos_encoder(embeddings_x)
+        embeddings_y = self.embedder_y(y)
+        embeddings_y = self.pos_encoder(embeddings_y)
+        embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
         mask = self.get_mask(x.shape[1], self.len_y+1)
-        for i in range(self.len_y):
-            embeddings_y = self.embedder_y(y)
-            embeddings_y = self.pos_encoder(embeddings_y)
-            embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
-            transformer_out = self.transformer(embeddings, mask=mask)
-            predictions = self.predictor(transformer_out)
-            y[:, i, :] = predictions[:, x.shape[1]+i, :]
-        return self.recover_from_patch(y[:, :])
+
+        transformer_out = self.transformer(embeddings, mask=mask)
+        predictions = self.predictor(transformer_out)[:, x.shape[1]:]
+        # return predictions[:, x.shape[1]:]
+        return self.recover_from_patch(predictions)
 
 
 def Transformer(input_shape, target_shape, model_config):
