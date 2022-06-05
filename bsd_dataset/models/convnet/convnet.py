@@ -5,6 +5,7 @@ from typing import Type, Union, List, Tuple, Optional
 
 __all__ = [
     "ConvNet",
+    "GaussianConvNet",
 ]
 
 class Bottleneck(nn.Module):
@@ -77,7 +78,7 @@ class BottleneckTranspose(nn.Module):
 
         return output
 
-class ConvNetTemplate(nn.Module):
+class _ConvNet(nn.Module):
     def __init__(self, input_shape: List[int], target_shape: List[int], num_blocks: List[int]) -> None:
         super().__init__()
         self.ln = nn.LayerNorm((input_shape[1], input_shape[2]))
@@ -91,9 +92,10 @@ class ConvNetTemplate(nn.Module):
         self.layer7 = self.make(block = BottleneckTranspose, in_channels = 128 * BottleneckTranspose.expansion, out_channels = 64, num_blocks = num_blocks[1], stride = 2)
         self.layer8 = self.make(block = BottleneckTranspose, in_channels = 64 * BottleneckTranspose.expansion, out_channels = 64, num_blocks = num_blocks[0])
 
-        self.conv = nn.Conv2d(in_channels = 64 * Bottleneck.expansion, out_channels = 1, kernel_size = 1, stride = 1, bias = False)
-        self.relu = nn.ReLU(inplace = True)
-        self.fc = nn.Linear((input_shape[1] * input_shape[2]), (target_shape[0] * target_shape[1]))
+        self.conv = nn.Conv2d(in_channels = 64 * Bottleneck.expansion, out_channels = target_shape[0], kernel_size = 1, stride = 1, bias = False)
+        self.bn = nn.BatchNorm2d(num_features = target_shape[0])
+
+        self.fc = nn.Linear((input_shape[1] * input_shape[2]), (target_shape[1] * target_shape[2]))
         
         for module in self.modules():
             if(isinstance(module, (nn.Conv2d, nn.ConvTranspose2d))):
@@ -106,7 +108,7 @@ class ConvNetTemplate(nn.Module):
         tail = nn.Sequential(*[block(in_channels = out_channels * block.expansion, out_channels = out_channels) for _ in range(num_blocks - 1)])
         return nn.ModuleList([head, tail])
 
-    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x0 = self.ln(x)
         x1 = self.layer1[1](self.layer1[0](x0))
         x2 = self.layer2[1](self.layer2[0](x1))
@@ -116,10 +118,11 @@ class ConvNetTemplate(nn.Module):
         x6 = self.layer6[1](self.layer6[0](x5, (x2.shape[-2], x2.shape[-1]))) + x2
         x7 = self.layer7[1](self.layer7[0](x6, (x1.shape[-2], x1.shape[-1]))) + x1
         x  = self.layer8[1](self.layer8[0](x7, (x0.shape[-2], x0.shape[-1])))
-        x = self.relu(self.conv(x))
-        x = self.fc(x.flatten(1)).reshape(x.shape[0], self.target_shape[0], self.target_shape[1])
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.fc(x.flatten(1)).reshape(x.shape[0], self.target_shape[1], self.target_shape[2])
 
         return x.squeeze(1)
 
-def ConvNet(input_shape, target_shape) -> ConvNetTemplate:
-    return ConvNetTemplate(input_shape = input_shape, target_shape = target_shape, num_blocks = [3, 6, 18, 6])
+def ConvNet(input_shape, target_shape) -> _ConvNet:
+    return _ConvNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [3, 6, 18, 6])
