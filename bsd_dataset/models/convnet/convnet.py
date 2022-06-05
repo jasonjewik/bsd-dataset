@@ -5,7 +5,6 @@ from typing import Type, Union, List, Tuple, Optional
 
 __all__ = [
     "ConvNet",
-    "GaussianConvNet",
 ]
 
 class Bottleneck(nn.Module):
@@ -108,7 +107,7 @@ class _ConvNet(nn.Module):
         tail = nn.Sequential(*[block(in_channels = out_channels * block.expansion, out_channels = out_channels) for _ in range(num_blocks - 1)])
         return nn.ModuleList([head, tail])
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
         x0 = self.ln(x)
         x1 = self.layer1[1](self.layer1[0](x0))
         x2 = self.layer2[1](self.layer2[0](x1))
