@@ -6,6 +6,7 @@ dependencies:
     - attrdict
     - cdsapi
     - configobj
+    - dask
     - numpy
     - pandas
     - regex
