@@ -19,21 +19,11 @@ def get_metrics(model, dataloader, prefix, options):
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
             target = target.nan_to_num()
-
-            # context[:, 5, :, :] = torch.log(context[:, 5, :, :] * 86400 + 0.1) - torch.log(torch.tensor(0.1))
-            # target = nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :])
-            # target = GaussianBlur(3)(nn.AdaptiveAvgPool2d(output_size = target.shape[1:])(context[:, 5, :, :]))
-
-            if options.model == 'Transformer':
-                    predictions = model.predict(context)
-            else:
-                predictions = model(context)
-
-            mask[...] = False
-            for i in range(len(context)):
-                total_rmse += rmse(predictions[i], target[i], mask[i])
-                total_bias += bias(predictions[i], target[i], mask[i])
-                total_pearsonr += pearsonr(predictions[i], target[i], mask[i])
+            predictions = model(context)
+            for index in range(len(context)):
+                total_rmse += rmse(predictions[index], target[index], mask[index])
+                total_bias += bias(predictions[index], target[index], mask[index])
+                total_pearsonr += pearsonr(predictions[index], target[index], mask[index])
 
         total_rmse /= dataloader.num_samples
         total_bias /= dataloader.num_samples
