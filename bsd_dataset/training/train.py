@@ -23,7 +23,7 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         
         context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
         target = target.nan_to_num()
-        predictions = model(context, target)
+        predictions = model(context, target = target)
 
         with autocast():
             loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])).mean()

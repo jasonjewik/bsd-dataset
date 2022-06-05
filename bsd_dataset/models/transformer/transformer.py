@@ -2,7 +2,6 @@ import yaml
 import torch
 import torch.nn as nn
 from torch.distributions.normal import Normal
-from attrdict import AttrDict
 import math
 
 class PositionalEncoding(nn.Module):
@@ -105,7 +104,8 @@ class TransformerClimate(nn.Module):
         y_lat_lon = torch.stack((info['y_lat'], info['y_lon']), dim=-1).reshape(y.shape[0], y.shape[1], -1)
         return x_lat_lon, y_lat_lon
 
-    def forward(self, x, y = None):
+    def forward(self, x, target = None):
+        y = target
         if(y is None):
             return self.predict(x)
             
