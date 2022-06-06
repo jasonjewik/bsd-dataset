@@ -12,7 +12,7 @@ class SRCNN(nn.Module):
         super(SRCNN, self).__init__()
         self.input_shape = input_shape
         self.target_shape = target_shape
-        self.ln = nn.LayerNorm((self.input_shape[1], self.input_shape[2]))
+        # self.ln = nn.LayerNorm((self.input_shape[1], self.input_shape[2]))
         self.conv1 = nn.Conv2d(self.input_shape[0], 8, kernel_size = 3, padding = 1, bias = False)
         self.bn1 = nn.BatchNorm2d(8)
         self.conv2 = nn.Conv2d(8, 16, kernel_size = 3, padding = 1, bias = False)
@@ -29,7 +29,7 @@ class SRCNN(nn.Module):
         self.dropout = nn.Dropout(0.2)
 
     def forward(self, x, **kwargs):
-        x = self.ln(x)
+        # x = self.ln(x)
         x = self.dropout(self.relu(self.bn1(self.conv1(x))))
         x = self.dropout(self.relu(self.bn2(self.conv2(x))))
         x = self.dropout(self.relu(self.bn3(self.conv3(x))))

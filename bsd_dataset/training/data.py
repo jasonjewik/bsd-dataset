@@ -1,5 +1,6 @@
 import os
 import torch
+import torchvision
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.distributed import DistributedSampler
@@ -9,12 +10,15 @@ class MyDataset(Dataset):
         super().__init__()
         path_x = os.path.join(path, split + "_x.npy")
         path_y = os.path.join(path, split + "_y.npy")
-        self.x = torch.from_numpy(np.load(path_x))
-        self.y = torch.from_numpy(np.load(path_y))
+        self.x = torch.from_numpy(np.load(path_x)).float()
+        if(len(self.x.shape) == 3):
+            self.x = self.x.unsqueeze(1)
+        self.y = torch.from_numpy(np.load(path_y)).float()
+        self.normalize = torchvision.transforms.Normalize(tuple([0.5] * self.x.shape[1]), tuple([0.5] * self.x.shape[1]))
     
     def __getitem__(self, index):
         mask = torch.zeros(self.y.shape[1:]).bool()
-        return self.x[index].unsqueeze(0).float(), self.y[index].float(), {"y_mask": mask}
+        return self.normalize(self.x[index]), self.y[index], {"y_mask": mask}
 
     def __len__(self):
         return self.x.shape[0]
