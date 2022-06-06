@@ -4,7 +4,7 @@ import torch.nn as nn
 from typing import Type, Union, List, Tuple, Optional
 
 __all__ = [
-    "ConvNet",
+    "UNet",
 ]
 
 class Bottleneck(nn.Module):
@@ -77,7 +77,7 @@ class BottleneckTranspose(nn.Module):
 
         return output
 
-class _ConvNet(nn.Module):
+class _UNet(nn.Module):
     def __init__(self, input_shape: List[int], target_shape: List[int], num_blocks: List[int]) -> None:
         super().__init__()
         self.ln = nn.LayerNorm((input_shape[1], input_shape[2]))
@@ -123,5 +123,5 @@ class _ConvNet(nn.Module):
 
         return x.squeeze(1)
 
-def ConvNet(input_shape, target_shape) -> _ConvNet:
-    return _ConvNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [3, 6, 18, 6])
+def UNet(input_shape, target_shape) -> _UNet:
+    return _UNet(input_shape = input_shape, target_shape = [1] + target_shape, num_blocks = [3, 6, 18, 6])
