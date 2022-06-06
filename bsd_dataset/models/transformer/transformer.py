@@ -1,3 +1,4 @@
+from numpy import mat
 import yaml
 import torch
 import torch.nn as nn
@@ -32,20 +33,26 @@ class TransformerClimate(nn.Module):
         dim_ffn, dropout, activation, std_constant,
     ):
         super().__init__()
-        # assert input_shape[1] % p_x == 0
-        # assert input_shape[2] % p_x == 0
-        # assert target_shape[0] % p_y == 0
-        # assert target_shape[1] % p_y == 0
 
         self.input_shape = input_shape
         self.target_shape = target_shape
         self.p_x = p_x
         self.p_y = p_y
 
+        self.pad_h_x = math.ceil(input_shape[1]/p_x)*p_x - input_shape[1]
+        self.pad_w_x = math.ceil(input_shape[2]/p_x)*p_x - input_shape[2]
+        self.pad_x = torch.nn.ZeroPad2d((0, self.pad_w_x, 0, self.pad_h_x))
+        self.even_input_shape = [input_shape[0], math.ceil(input_shape[1]/p_x)*p_x, math.ceil(input_shape[2]/p_x)*p_x]
+
+        self.pad_h_y = math.ceil(target_shape[0]/p_y)*p_y - target_shape[0]
+        self.pad_w_y = math.ceil(target_shape[1]/p_y)*p_y - target_shape[1]
+        self.pad_y = torch.nn.ZeroPad2d((0, self.pad_w_y, 0, self.pad_h_y))
+        self.even_target_shape = [math.ceil(target_shape[0]/p_y)*p_y, math.ceil(target_shape[1]/p_y)*p_y]
+
         c = input_shape[0]
         d_in = int(p_x**2 * c)
         d_out = int(p_y**2)
-        len_y = (target_shape[0]//p_y) * (target_shape[1]//p_y)
+        len_y = ((target_shape[0]+self.pad_h_y)//p_y) * ((target_shape[1]+self.pad_w_y)//p_y)
 
         self.d_in = d_in
         self.d_out = d_out
@@ -87,7 +94,7 @@ class TransformerClimate(nn.Module):
         return patches
 
     def recover_from_patch(self, x):
-        b, h, w, p = x.shape[0], self.target_shape[0], self.target_shape[1], self.p_y
+        b, h, w, p = x.shape[0], self.even_target_shape[0], self.even_target_shape[1], self.p_y
         shape = [b, h//p, p, w//p, p]
         stride = [x.stride()[0], w*p, p, p**2, 1]
         x = torch.as_strided(x, shape, stride=stride)
@@ -105,27 +112,29 @@ class TransformerClimate(nn.Module):
         return x_lat_lon, y_lat_lon
 
     def forward(self, x, target = None):
-        y = target
-        if(y is None):
+        if(target is None):
             return self.predict(x)
-            
+
+        x = self.pad_x(x)            
         x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
         y = torch.zeros((x.shape[0], self.len_y, self.d_out), device=x.device)
-        y = self.extract_patch(y.unsqueeze(-1), self.p_y)
 
         embeddings_x = self.embedder_x(x)
         embeddings_x = self.pos_encoder(embeddings_x)
         embeddings_y = self.embedder_y(y)
         embeddings_y = self.pos_encoder(embeddings_y)
+
         embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
         mask = self.get_mask(x.shape[1], self.len_y)
-
         transformer_out = self.transformer(embeddings, mask=mask)
         predictions = self.predictor(transformer_out)[:, x.shape[1]:]
-        # return predictions[:, x.shape[1]:]
-        return self.recover_from_patch(predictions)
+        
+        predictions = self.recover_from_patch(predictions)
+        predictions = predictions[:, :self.target_shape[0], :self.target_shape[1]]
+        return predictions
     
     def predict(self, x):
+        x = self.pad_x(x)
         x = self.extract_patch(torch.permute(x, (0, 2, 3, 1)), self.p_x)
         y = torch.zeros((x.shape[0], self.len_y, self.d_out), device=x.device)
 
@@ -133,13 +142,15 @@ class TransformerClimate(nn.Module):
         embeddings_x = self.pos_encoder(embeddings_x)
         embeddings_y = self.embedder_y(y)
         embeddings_y = self.pos_encoder(embeddings_y)
-        embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
-        mask = self.get_mask(x.shape[1], self.len_y+1)
 
+        embeddings = torch.cat((embeddings_x, embeddings_y), dim=1)
+        mask = self.get_mask(x.shape[1], self.len_y)
         transformer_out = self.transformer(embeddings, mask=mask)
         predictions = self.predictor(transformer_out)[:, x.shape[1]:]
-        # return predictions[:, x.shape[1]:]
-        return self.recover_from_patch(predictions)
+        
+        predictions = self.recover_from_patch(predictions)
+        predictions = predictions[:, :self.target_shape[0], :self.target_shape[1]]
+        return predictions
 
 
 def Transformer(input_shape, target_shape, model_config):
