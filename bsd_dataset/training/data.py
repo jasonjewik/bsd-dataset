@@ -14,7 +14,7 @@ class MyDataset(Dataset):
     
     def __getitem__(self, index):
         mask = torch.zeros(self.y.shape[1:]).bool()
-        return self.x[index].unsqueeze(0), self.y[index], {"y_mask": mask}
+        return self.x[index].unsqueeze(0).float(), self.y[index].float(), {"y_mask": mask}
 
     def __len__(self):
         return self.x.shape[0]
