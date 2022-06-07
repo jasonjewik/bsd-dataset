@@ -15,19 +15,23 @@ def get_metrics(model, dataloader, prefix, options):
     total_bias = 0
     total_pearsonr = 0
 
+    num_samples = 0
+
     with torch.no_grad():
         for batch in tqdm(dataloader):
             context, target, mask = batch[0].to(options.device), batch[1].to(options.device), batch[2]["y_mask"].to(options.device)
             target = target.nan_to_num()
             predictions = model(context)
             for index in range(len(context)):
-                total_rmse += rmse(predictions[index], target[index], mask[index])
-                total_bias += bias(predictions[index], target[index], mask[index])
-                total_pearsonr += pearsonr(predictions[index], target[index], mask[index])
+                if (~mask[index]).sum() != 0:
+                    num_samples += 1
+                    total_rmse += rmse(predictions[index], target[index], mask[index])
+                    total_bias += bias(predictions[index], target[index], mask[index])
+                    total_pearsonr += pearsonr(predictions[index], target[index], mask[index])
 
-        total_rmse /= dataloader.num_samples
-        total_bias /= dataloader.num_samples
-        total_pearsonr /= dataloader.num_samples
+        total_rmse /= num_samples
+        total_bias /= num_samples
+        total_pearsonr /= num_samples
 
         metrics[f"{prefix}_rmse"] = total_rmse
         metrics[f"{prefix}_bias"] = total_bias
