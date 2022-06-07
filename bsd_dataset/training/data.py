@@ -14,14 +14,14 @@ class MyDataset(Dataset):
         if(len(self.x.shape) == 3):
             self.x = self.x.unsqueeze(1)
         self.y = torch.from_numpy(np.load(path_y)).float()
+        self.mask = self.y.isnan()
         self.normalize = normalize
     
     def __getitem__(self, index):
-        mask = torch.zeros(self.y.shape[1:]).bool()
         if self.normalize is not None:
-            return self.normalize(self.x[index]), self.y[index], {"y_mask": mask}
+            return self.normalize(self.x[index]), self.y[index], {"y_mask": self.mask[index]}
         else:
-            return self.x[index], self.y[index], {"y_mask": mask}
+            return self.x[index], self.y[index], {"y_mask": self.mask[index]}
 
     def __len__(self):
         return self.x.shape[0]
@@ -54,3 +54,11 @@ def get_dataloaders(options):
 
 def load(options):    
     return get_dataloaders(options)
+
+# dataset = MyDataset('/home/data/BSDD/era-eu-1.4-persiann-0.25/', 'train')
+# print (dataset.x.shape)
+# print (dataset.y.shape)
+# x, y, info = dataset[0]
+# print (info['y_mask'].sum())
+# print (y[1])
+# print (info['y_mask'][1])

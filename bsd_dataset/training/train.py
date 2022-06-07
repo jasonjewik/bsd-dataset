@@ -26,7 +26,7 @@ def train(epoch, model, dataloaders, optimizer, scheduler, scaler, options):
         predictions = model(context, target = target)
 
         with autocast():
-            loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2]) / (1 - mask.float()).sum([1, 2])).mean()
+            loss = ((torch.square(predictions - target) * (1 - mask.float())).sum([1, 2]) / ((1 - mask.float()).sum([1, 2]) + 1e-8)).mean()
             scaler.scale(loss).backward()
             scaler.step(optimizer)
         scaler.update()
