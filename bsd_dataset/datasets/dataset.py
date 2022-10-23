@@ -414,7 +414,26 @@ class BSDDBuilder:
             dir_path = src.parent / src.name.split('.')[1]
             if src.suffix == '.tgz':
                 with tarfile.open(src) as tar:        
-                    tar.extractall(path=dir_path)
+                    def is_within_directory(directory, target):
+                        
+                        abs_directory = os.path.abspath(directory)
+                        abs_target = os.path.abspath(target)
+                    
+                        prefix = os.path.commonprefix([abs_directory, abs_target])
+                        
+                        return prefix == abs_directory
+                    
+                    def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+                    
+                        for member in tar.getmembers():
+                            member_path = os.path.join(path, member.name)
+                            if not is_within_directory(path, member_path):
+                                raise Exception("Attempted Path Traversal in Tar File")
+                    
+                        tar.extractall(path, members, numeric_owner=numeric_owner) 
+                        
+                    
+                    safe_extract(tar, path=dir_path)
             if src.suffix == '.zip':
                 with ZipFile(src) as zipfile:
                     zipfile.extractall(path=dir_path)
